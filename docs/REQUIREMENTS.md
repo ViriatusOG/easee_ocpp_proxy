@@ -303,12 +303,15 @@ OCPP 1.6 CALLs. At minimum:
   interval is: for **local** CPs, the proxy's configured value; for the **proxied** CP, the
   interval the CSMS returns in its `BootNotification.conf` (the capture showed `interval=10`
   — Appendix A), which the proxy observes and tracks per FR-21a.
-- **FR-25** **Upstream liveness:** for the proxied CP, if no frame is received from the
-  CSMS within **twice the heartbeat interval** — which, since CP heartbeats are relayed
-  every interval and answered, is equivalent to "the CSMS stopped answering heartbeats" —
-  the proxy SHALL close **both** the upstream and downstream connections. No separate
-  WebSocket ping keepalive is used (Q4 resolved). The `upstream_timeout` value is used only
-  for the initial upstream dial/connect.
+- **FR-25** **Upstream liveness:** for the proxied CP, the upstream and downstream links
+  are timed **independently** — each side has its own watchdog reset only by frames
+  arriving on that side — so a one-sided dead link (e.g. the CSMS application hangs while
+  TCP stays open, and the Easee keeps sending) is still detected. If no frame is received
+  from the CSMS within **twice the applicable interval**, the proxy SHALL close **both**
+  links. The applicable interval starts at 2× the local heartbeat and is **tightened to 2×
+  the interval the CSMS returns in `BootNotification.conf`** once observed (FR-24). No
+  WebSocket ping keepalive is used (Q4 resolved). `upstream_timeout` is used only for the
+  initial dial/connect.
 - **FR-26** The proxy SHALL clean up all per-connection resources (goroutines, timers,
   buffers) on close, leaving no stale connections or leaked timers.
 - **FR-27** The proxy SHOULD, on transient upstream failure, allow the Easee CP to

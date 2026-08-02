@@ -60,9 +60,15 @@ Milestone 4 (upstream proxying):
 - Observes relayed frames to populate the dashboard (status, session, energy) for the
   proxied CP; either side closing tears down both; idle watchdog on both links.
 
-Not yet implemented: lifecycle refinements (M5 — tighten proxied liveness to the
-CSMS-supplied boot interval; upstream reconnect policy), remote-password encryption at
-rest (FR-35).
+Milestone 5 (lifecycle refinements):
+
+- Proxied liveness is timed independently per direction (so a one-sided dead link is
+  detected) and tightened to 2× the CSMS-supplied `BootNotification.conf` interval once
+  observed.
+
+Not yet implemented: remote-password encryption at rest (FR-35). Upstream reconnection
+stays Easee-driven (the charger auto-reconnects ~every 10s, which already throttles
+retries — Q9 default).
 
 ## Prerequisites
 

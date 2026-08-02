@@ -155,6 +155,14 @@ func (w *watchdog) kick() {
 	w.t.Reset(w.d)
 }
 
+// setInterval changes the timeout and restarts the countdown.
+func (w *watchdog) setInterval(d time.Duration) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.d = d
+	w.t.Reset(d)
+}
+
 func (w *watchdog) stop() {
 	w.mu.Lock()
 	defer w.mu.Unlock()

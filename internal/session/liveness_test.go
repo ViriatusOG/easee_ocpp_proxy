@@ -41,6 +41,24 @@ func TestWatchdogResetOnKick(t *testing.T) {
 	}
 }
 
+func TestWatchdogSetInterval(t *testing.T) {
+	fc := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	var fired bool
+	wd := newWatchdog(fc, 20*time.Second, func() { fired = true })
+	defer wd.stop()
+
+	// Tighten to 6s (as if the CSMS advertised interval=3, so 2×3).
+	wd.setInterval(6 * time.Second)
+	fc.Advance(5 * time.Second)
+	if fired {
+		t.Fatal("fired before the tightened interval")
+	}
+	fc.Advance(1 * time.Second)
+	if !fired {
+		t.Fatal("did not fire at the tightened interval")
+	}
+}
+
 func TestWatchdogStopPreventsFiring(t *testing.T) {
 	fc := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	var fired bool

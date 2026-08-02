@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/ipeel/easee-ocpp-proxy/internal/clock"
@@ -52,13 +54,26 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Idle liveness: no frame from either side within 2× heartbeat closes both
-	// (FR-24/FR-25). M5 will tighten this to the CSMS-supplied boot interval.
-	wd := newWatchdog(clk, 2*cfg.HeartbeatInterval(), func() {
-		log.Warn("proxy idle timeout; closing both links")
+	// Independent liveness per direction: a one-sided dead link (e.g. the CSMS app
+	// hangs while TCP stays open) is only caught if each side is timed separately —
+	// downstream (FR-24) and upstream (FR-25). Start at 2× the local heartbeat, then
+	// tighten to 2× the CSMS-supplied boot interval once known.
+	initial := 2 * cfg.HeartbeatInterval()
+	downstreamWD := newWatchdog(clk, initial, func() {
+		log.Warn("downstream idle timeout; closing both links", "after", initial.String())
 		cancel()
 	})
-	defer wd.stop()
+	defer downstreamWD.stop()
+	upstreamWD := newWatchdog(clk, initial, func() {
+		log.Warn("upstream idle timeout (CSMS silent); closing both links", "after", initial.String())
+		cancel()
+	})
+	defer upstreamWD.stop()
+
+	// bootUID correlates the CSMS's BootNotification.conf back to the boot we forwarded,
+	// so we can read the CSMS-supplied heartbeat interval and tighten liveness (FR-25).
+	var bootMu sync.Mutex
+	var bootUID string
 
 	// downstream → upstream (anonymise BootNotification, observe telemetry)
 	go func() {
@@ -70,13 +85,16 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 				log.Debug("downstream disconnect detail", "err", err)
 				return
 			}
-			wd.kick()
+			downstreamWD.kick()
 			out := data
 			if typ == websocket.MessageText {
 				if f, perr := ocpp.Parse(data); perr == nil {
 					log.Debug("cp → csms", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID)
 					observeProxyFrame(m, id, f, log)
 					if f.Type == ocpp.CALL && f.Action == "BootNotification" {
+						bootMu.Lock()
+						bootUID = f.UniqueID
+						bootMu.Unlock()
 						out = anonymiseBoot(f, cfg.BootAnonymise, log)
 					}
 				}
@@ -107,9 +125,25 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 				return
 			}
 			receivedAny = true
-			wd.kick()
+			upstreamWD.kick()
 			if typ == websocket.MessageText {
 				if f, perr := ocpp.Parse(data); perr == nil {
+					// Tighten liveness to the CSMS-supplied heartbeat interval carried in
+					// the BootNotification.conf (FR-25).
+					if f.Type == ocpp.CALLRESULT {
+						bootMu.Lock()
+						isBoot := f.UniqueID != "" && f.UniqueID == bootUID
+						bootMu.Unlock()
+						if isBoot {
+							var conf ocpp.BootNotificationConf
+							if json.Unmarshal(f.Payload, &conf) == nil && conf.Interval > 0 {
+								d := 2 * time.Duration(conf.Interval) * time.Second
+								downstreamWD.setInterval(d)
+								upstreamWD.setInterval(d)
+								log.Info("liveness tightened to CSMS heartbeat interval", "intervalSeconds", conf.Interval)
+							}
+						}
+					}
 					if f.Type == ocpp.CALL && notableCSMSCommand(f.Action) {
 						log.Info("csms command", "action", f.Action, "uid", f.UniqueID, "payload", string(f.Payload))
 					} else {

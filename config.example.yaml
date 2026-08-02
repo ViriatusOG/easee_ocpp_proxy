@@ -1,0 +1,57 @@
+# Easee OCPP Proxy — example configuration.
+# Copy to config.yaml and edit. See docs/REQUIREMENTS.md and docs/IMPLEMENTATION_PLAN.md.
+
+listen_addr: ":9000"            # single port for ws:// OCPP and http:// /admin (D-2)
+heartbeat_interval_s: 300       # advertised to local CPs; idle liveness cutoff = 2× (FR-24)
+upstream_timeout_s: 30          # initial upstream dial/connect timeout only (FR-17)
+
+# Allow-list of downstream Easee CP IDs (≤25 chars, FR-3/FR-5a).
+# Each Easee connects to  ws://<proxy-host>:9000/<id>  (root path, D-8).
+chargepoints:
+  - K9PZQ4RT
+  - M4XTR7Q2
+
+# The single remotely-managed chargepoint, or "" for none (FR-6/FR-7).
+proxied_id: K9PZQ4RT
+
+# Friendly names shown on the dashboard instead of the raw CP ID (FR-42).
+aliases:
+  K9PZQ4RT: Garage Left
+
+# Charging schedules (FR-41). Times are local wall-clock, DST-aware. A window may
+# cross midnight. timezone is an IANA name; blank = server local time.
+timezone: ""            # e.g. Europe/London
+schedules:
+  - name: overnight
+    start: "23:30"
+    stop: "05:30"
+device_schedules:       # CP ID → schedule name; unlisted CPs charge any time
+  K9PZQ4RT: overnight
+
+# Upstream CSMS — used only when a CP is proxied (D-3/D-7/D-8).
+remote:
+  url: wss://csms.example.com                 # base: scheme + host [+ optional path prefix]
+  upstream_id: a3f71c92-6b48-4e05-9d1f-2c7a5e0b93d4   # appended to url; may exceed 25 chars (D-7)
+  username: mysite
+  password_enc: ""                            # set via the admin UI; stored obfuscated (FR-35)
+
+# Local auto-start: send RemoteStartTransaction when an auto-authorised chargepoint
+# reports a connector "Preparing" but waits for backend authorisation (D-11). Needed
+# for chargers (e.g. Wallbox) that don't self-start when online. Disable for chargers
+# that start on their own.
+local_auto_start:
+  enabled: true
+  id_tag: PROXY
+
+# BootNotification anonymisation for the proxied CP (D-6/FR-21a).
+# vendor/model are always replaced; firmware/serial pass through unless set.
+boot_anonymise:
+  charge_point_vendor: Wallbox
+  charge_point_model: Pulsar
+  # firmware_version: ""
+  # serial_number: ""
+
+# Admin UI credentials (D-4/FR-31). password_hash is bcrypt; set via the admin UI.
+admin:
+  username: admin
+  password_hash: ""

@@ -1,0 +1,21 @@
+# Binaries
+/easee-proxy
+/proxy
+/dist/
+*.exe
+*.exe~
+*~
+
+# Local config with real IDs / credentials — never commit
+/config.yaml
+*.tmp
+.easee-proxy-*.yaml.tmp
+
+# Packet captures (may contain real identifiers)
+*.pcap
+*.pcapng
+
+# Go
+/vendor/
+*.test
+*.out

@@ -1,0 +1,24 @@
+[Unit]
+Description=Easee OCPP Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Create a dedicated user first:  sudo useradd --system --no-create-home easee-proxy
+User=easee-proxy
+Group=easee-proxy
+ExecStart=/usr/local/bin/easee-proxy -config /etc/easee-proxy/config.yaml
+Restart=on-failure
+RestartSec=3
+
+# Hardening (the admin UI is plain HTTP on the shared port — keep it LAN-only, NFR-5).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# config.yaml must be writable: admin changes are persisted back to it (FR-34).
+ReadWritePaths=/etc/easee-proxy
+
+[Install]
+WantedBy=multi-user.target

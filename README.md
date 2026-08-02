@@ -50,9 +50,19 @@ Milestone 2 (local auto-authorisation):
 - Downstream liveness watchdog: closes a connection silent for 2× the heartbeat
   interval, using an injectable clock for deterministic tests.
 
-Not yet implemented: admin dashboard (M3), upstream proxying + BootNotification
-anonymisation (M4), lifecycle cross-linking (M5), telemetry polish (M6). Proxied
-chargepoints are observe-only until M4.
+Milestone 4 (upstream proxying):
+
+- Relays the single proxied chargepoint to the remote CSMS over `wss://` with HTTP
+  Basic auth (Profile 2), mapping the short Easee CP ID to the longer upstream ID via
+  the URL.
+- Transparent bidirectional relay (including CSMS-initiated commands), with
+  `BootNotification` vendor/model/firmware/serial anonymised before it goes upstream.
+- Observes relayed frames to populate the dashboard (status, session, energy) for the
+  proxied CP; either side closing tears down both; idle watchdog on both links.
+
+Not yet implemented: lifecycle refinements (M5 — tighten proxied liveness to the
+CSMS-supplied boot interval; upstream reconnect policy), remote-password encryption at
+rest (FR-35).
 
 ## Prerequisites
 

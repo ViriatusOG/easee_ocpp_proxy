@@ -51,6 +51,9 @@ const baseTmpl = `{{define "base"}}<!doctype html>
   tr.proxied { background: #fff7e6; }
   .badge { font-size: .72rem; padding: .1rem .45rem; border-radius: .5rem; background: #e2e8f0; }
   .badge.proxied { background: #f59e0b; color: #fff; }
+  button.badge { border: 1px solid transparent; background: #e2e8f0; color: #1a1a1a; cursor: pointer; }
+  button.badge.proxied { background: #f59e0b; color: #fff; }
+  button.badge:hover { outline: 1px solid #94a3b8; }
   .up { color: #16a34a; } .down { color: #cbd5e1; }
   .flash { max-width: 60rem; margin: 1rem auto 0; padding: .6rem 1rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: .4rem; }
   .flash.error { background: #fef2f2; border-color: #fecaca; }
@@ -96,7 +99,19 @@ const dashboardContent = `{{define "content"}}
   {{range .Rows}}
     <tr class="{{if .Proxied}}proxied{{end}}">
       <td>{{.Name}}{{if ne .Name .ID}}<br><span class="muted">{{.ID}}</span>{{end}}</td>
-      <td><span class="badge {{if .Proxied}}proxied{{end}}">{{.Role}}</span></td>
+      <td>
+        {{if .Proxied}}
+        <form method="post" action="/admin/proxied" onsubmit="return confirm('Stop remotely managing {{.Name}}? It will switch to local auto-authorisation and the remote session is disconnected.')">
+          <input type="hidden" name="proxied_id" value="__none__">
+          <button type="submit" class="badge proxied" title="Remotely managed — click to switch to local">proxied</button>
+        </form>
+        {{else}}
+        <form method="post" action="/admin/proxied" onsubmit="return confirm('Make {{.Name}} the remotely-managed chargepoint? This disconnects it and any current remote session so it reconnects proxied.')">
+          <input type="hidden" name="proxied_id" value="{{.ID}}">
+          <button type="submit" class="badge" title="Auto-authorised locally — click to manage remotely">local</button>
+        </form>
+        {{end}}
+      </td>
       <td>{{if .Online}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}</td>
       <td>{{if .ShowUpstream}}{{if .UpstreamUp}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}{{else}}—{{end}}</td>
       <td>{{.Status}}</td>
@@ -112,17 +127,7 @@ const dashboardContent = `{{define "content"}}
   </tbody>
 </table>
 
-<form class="card" method="post" action="/admin/proxied" style="margin-top:1rem">
-  <strong>Remotely managed chargepoint</strong>
-  <p class="muted">Exactly one chargepoint can be proxied to the remote server. Changing this reconnects the affected chargepoints.</p>
-  <div class="radios">
-    <label><input type="radio" name="proxied_id" value="__none__" {{if eq .ProxiedID ""}}checked{{end}}> None — all auto-authorised locally</label>
-    {{range .Chargepoints}}
-    <label><input type="radio" name="proxied_id" value="{{.}}" {{if eq . $.ProxiedID}}checked{{end}}> {{.}}</label>
-    {{end}}
-  </div>
-  <button type="submit">Apply</button>
-</form>
+<p class="muted" style="margin-top:1rem">Tip: click a chargepoint's <strong>role</strong> to change which one is remotely managed. Exactly one can be proxied; switching reconnects the affected chargepoints.</p>
 {{end}}`
 
 const chargepointsContent = `{{define "content"}}
@@ -230,8 +235,8 @@ const remoteContent = `{{define "content"}}
   <label for="upstream_id">Upstream chargepoint ID <span class="muted">(may exceed 25 chars)</span></label>
   <input id="upstream_id" name="upstream_id" type="text" value="{{.Remote.UpstreamID}}">
 
-  <label for="username">Username</label>
-  <input id="username" name="username" type="text" value="{{.Remote.Username}}">
+  <label for="username">Username <span class="muted">(optional — defaults to the upstream chargepoint ID, per OCPP Basic auth)</span></label>
+  <input id="username" name="username" type="text" value="{{.Remote.Username}}" placeholder="(defaults to upstream ID)">
 
   <label for="password">Password <span class="muted">({{if .PasswordSet}}set — leave blank to keep{{else}}not set{{end}})</span></label>
   <input id="password" name="password" type="password" autocomplete="new-password">

@@ -264,8 +264,10 @@ OCPP 1.6 CALLs. At minimum:
   is independent of the Easee's downstream CP ID and MAY be longer than 25 characters
   (see D-7); the proxy maps between them at the connection/URL layer.
 - **FR-18** Upstream authentication SHALL use HTTP Basic auth over TLS (`wss://`), i.e.
-  OCPP 1.6 Security Profile 2, with the configured username and password. *(Confirmed —
-  D-3.)*
+  OCPP 1.6 Security Profile 2. Per the OCPP convention the Basic-auth **username is the
+  charge point's identity**, so the proxy SHALL default the username to the configured
+  **upstream CP ID** unless an explicit username override is set; the password is the
+  authorization key. *(Confirmed — D-3.)*
 - **FR-19** Once both links are up, the proxy SHALL relay OCPP messages **transparently
   in both directions** — CALL, CALLRESULT, and CALLERROR frames — without altering message
   IDs or payloads. This includes all CSMS-initiated command CALLs (RemoteStart/Stop, Reset,

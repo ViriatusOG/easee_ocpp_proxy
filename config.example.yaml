@@ -32,8 +32,8 @@ device_schedules:       # CP ID → schedule name; unlisted CPs charge any time
 remote:
   url: wss://csms.example.com                 # base: scheme + host [+ optional path prefix]
   upstream_id: a3f71c92-6b48-4e05-9d1f-2c7a5e0b93d4   # appended to url; may exceed 25 chars (D-7)
-  username: mysite
-  password_enc: ""                            # set via the admin UI; stored obfuscated (FR-35)
+  username: ""                                # optional; defaults to upstream_id (OCPP Basic auth)
+  password_enc: ""                            # authorization key; set via the admin UI (FR-35)
 
 # Local auto-start: send RemoteStartTransaction when an auto-authorised chargepoint
 # reports a connector "Preparing" but waits for backend authorisation (D-11). Needed

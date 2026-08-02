@@ -1,13 +1,18 @@
 // Package session handles a single downstream (Easee-facing) WebSocket connection.
 //
-// Milestone 2/3: local (auto-authorised) chargepoints are served by the local Central
-// System (local.go), including schedule-driven start/stop (FR-41). Proxied
-// chargepoints remain observe-only until Milestone 4. A liveness watchdog closes a
-// connection silent for 2× the heartbeat interval (FR-24).
+//   - local (auto-authorised) CPs are served by the local Central System (local.go),
+//     including schedule-driven start/stop (FR-41).
+//   - the proxied CP is relayed to the remote CSMS (proxy.go), with BootNotification
+//     anonymised upstream (D-6).
+//
+// A liveness watchdog closes a connection that goes silent for 2× the heartbeat
+// interval (FR-24).
 package session
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -19,11 +24,27 @@ import (
 	"github.com/ipeel/easee-ocpp-proxy/internal/state"
 )
 
+// disconnectReason classifies a WebSocket read error into a short, human-readable
+// reason. The raw error (often a noisy OS TCP string) is logged separately at DEBUG.
+func disconnectReason(err error) string {
+	switch {
+	case err == nil:
+		return "closed"
+	case errors.Is(err, context.Canceled):
+		return "session ended"
+	default:
+		if code := websocket.CloseStatus(err); code != -1 {
+			return fmt.Sprintf("clean close (status %d)", int(code))
+		}
+		return "connection lost — abrupt disconnect (e.g. powered off or network dropped)"
+	}
+}
+
 // scheduleTick is how often the background reconciler re-evaluates a CP's window.
 const scheduleTick = 15 * time.Second
 
-// Serve runs the read loop for one downstream connection until it closes or ctx is
-// cancelled. It takes ownership of c and closes it on return.
+// Serve runs one downstream connection until it closes or ctx is cancelled. It takes
+// ownership of c and closes it on return.
 func Serve(ctx context.Context, c *websocket.Conn, id string, role manager.Role, m *manager.Manager, clk clock.Clock, logger *slog.Logger) {
 	log := logger.With("cp", id, "role", role.String())
 
@@ -46,8 +67,20 @@ func Serve(ctx context.Context, c *websocket.Conn, id string, role manager.Role,
 	})
 	defer c.CloseNow()
 
-	// Writes may come from the read loop and (for local CPs) the schedule reconciler,
-	// so serialise them — the WebSocket library forbids concurrent writes.
+	if role == manager.RoleProxied {
+		runProxy(ctx, c, id, m, clk, log)
+		return
+	}
+	runLocal(ctx, c, id, m, clk, log)
+}
+
+// runLocal serves an auto-authorised chargepoint as the local Central System.
+func runLocal(ctx context.Context, c *websocket.Conn, id string, m *manager.Manager, clk clock.Clock, log *slog.Logger) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Writes may come from the read loop and the schedule reconciler, so serialise
+	// them — the WebSocket library forbids concurrent writes.
 	var writeMu sync.Mutex
 	send := func(data []byte) error {
 		writeMu.Lock()
@@ -55,8 +88,6 @@ func Serve(ctx context.Context, c *websocket.Conn, id string, role manager.Role,
 		return c.Write(ctx, websocket.MessageText, data)
 	}
 
-	// FR-24: liveness cutoff = 2× the applicable heartbeat interval. For proxied CPs
-	// Milestone 4 replaces this with the CSMS-supplied interval.
 	liveness := 2 * m.Config().HeartbeatInterval()
 	wd := newWatchdog(clk, liveness, func() {
 		log.Warn("liveness timeout; closing connection", "after", liveness.String())
@@ -65,14 +96,13 @@ func Serve(ctx context.Context, c *websocket.Conn, id string, role manager.Role,
 	defer wd.stop()
 
 	local := &localCSMS{id: id, m: m, clk: clk, log: log}
-	if role == manager.RoleLocal {
-		go local.runScheduler(ctx, send)
-	}
+	go local.runScheduler(ctx, send)
 
 	for {
 		typ, data, err := c.Read(ctx)
 		if err != nil {
-			log.Info("chargepoint disconnected", "err", err)
+			log.Info("chargepoint disconnected", "reason", disconnectReason(err))
+			log.Debug("disconnect detail", "err", err)
 			return
 		}
 		wd.kick()
@@ -87,45 +117,46 @@ func Serve(ctx context.Context, c *websocket.Conn, id string, role manager.Role,
 			continue
 		}
 
-		switch role {
-		case manager.RoleLocal:
-			// Full frames at DEBUG for deep troubleshooting; the handler emits
-			// operator-meaningful lifecycle events at INFO.
-			if f.Type == ocpp.CALL {
-				log.Debug("cp → proxy", "action", f.Action, "uid", f.UniqueID, "payload", string(f.Payload))
-			}
-			resps, herr := local.handle(f)
-			if herr != nil {
-				log.Error("handler error", "action", f.Action, "err", herr)
+		if f.Type == ocpp.CALL {
+			log.Debug("cp → proxy", "action", f.Action, "uid", f.UniqueID, "payload", string(f.Payload))
+		}
+		resps, herr := local.handle(f)
+		if herr != nil {
+			log.Error("handler error", "action", f.Action, "err", herr)
+			continue
+		}
+		for _, resp := range resps {
+			if resp == nil {
 				continue
 			}
-			for _, resp := range resps {
-				if resp == nil {
-					continue
-				}
-				if err := send(resp); err != nil {
-					log.Info("write failed; disconnecting", "err", err)
-					return
-				}
+			if err := send(resp); err != nil {
+				log.Info("write failed; disconnecting", "err", err)
+				return
 			}
-
-		case manager.RoleProxied:
-			// TODO(milestone-4): relay to the remote CSMS. Observe-only for now.
-			log.Info("ocpp frame (proxied observe-only)", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID)
 		}
 	}
 }
 
-// watchdog fires onExpire unless kicked within its interval.
+// watchdog fires onExpire unless kicked within its interval. Safe for concurrent
+// kick/stop (the proxy path kicks from two goroutines).
 type watchdog struct {
-	d time.Duration
-	t clock.Timer
+	mu sync.Mutex
+	d  time.Duration
+	t  clock.Timer
 }
 
 func newWatchdog(clk clock.Clock, d time.Duration, onExpire func()) *watchdog {
 	return &watchdog{d: d, t: clk.AfterFunc(d, onExpire)}
 }
 
-func (w *watchdog) kick() { w.t.Reset(w.d) }
+func (w *watchdog) kick() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.t.Reset(w.d)
+}
 
-func (w *watchdog) stop() { w.t.Stop() }
+func (w *watchdog) stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.t.Stop()
+}

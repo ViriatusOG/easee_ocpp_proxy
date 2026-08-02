@@ -274,6 +274,13 @@ func (h *localCSMS) touch(fn func(*state.CP)) {
 }
 
 func (h *localCSMS) applyMeterValues(req *ocpp.MeterValuesReq) {
+	applyMeterValuesToState(h.m, h.id, req)
+	h.touch(func(*state.CP) {}) // bump LastMessage
+}
+
+// applyMeterValuesToState extracts energy/power (honouring units) and updates state.
+// Shared by the local handler and the proxy observer.
+func applyMeterValuesToState(m *manager.Manager, id string, req *ocpp.MeterValuesReq) {
 	var energyWh, powerW float64
 	var haveEnergy, havePower bool
 
@@ -296,7 +303,7 @@ func (h *localCSMS) applyMeterValues(req *ocpp.MeterValuesReq) {
 		}
 	}
 
-	h.touch(func(cp *state.CP) {
+	m.State().Update(id, func(cp *state.CP) {
 		if havePower {
 			cp.PowerW = powerW
 		}

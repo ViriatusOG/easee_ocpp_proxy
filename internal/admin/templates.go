@@ -37,7 +37,8 @@ const baseTmpl = `{{define "base"}}<!doctype html>
 {{if .Refresh}}<meta http-equiv="refresh" content="{{.Refresh}}">{{end}}
 <style>
   :root { font-family: system-ui, sans-serif; }
-  body { margin: 0; color: #1a1a1a; background: #f6f7f9; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; color: #1a1a1a; background: #f6f7f9; overflow-x: hidden; }
   header { background: #1f2933; color: #fff; padding: .75rem 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
   header a { color: #cbd5e1; text-decoration: none; }
   header a:hover { color: #fff; }
@@ -65,6 +66,26 @@ const baseTmpl = `{{define "base"}}<!doctype html>
   button.danger { background: #dc2626; }
   .radios label { display: flex; align-items: center; gap: .4rem; margin: .3rem 0; }
   .muted { color: #64748b; font-size: .85rem; }
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  select, input[type=text], input[type=password], input[type=url] { font-size: 16px; } /* avoid iOS zoom-on-focus */
+  @media (max-width: 720px) {
+    main { padding: 0 .6rem; margin: 1rem auto; }
+    header { gap: .55rem; padding: .6rem .7rem; }
+    h1 { font-size: 1.2rem; }
+    .table-scroll { overflow-x: visible; } /* cards stack, no horizontal scroll needed */
+    /* Dashboard: turn the wide table into stacked cards */
+    table.cards { display: block; }
+    table.cards thead { display: none; }
+    table.cards tbody, table.cards tr, table.cards td { display: block; }
+    table.cards tr { margin: 0 0 .8rem; border: 1px solid #e2e8f0; border-radius: .6rem; padding: .3rem .8rem; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    table.cards tr.proxied { background: #fff7e6; }
+    table.cards td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: 0; border-bottom: 1px solid #f1f5f9; padding: .55rem 0; text-align: right; min-width: 0; }
+    table.cards td:last-child { border-bottom: 0; }
+    table.cards td::before { content: attr(data-label); font-weight: 600; color: #64748b; text-align: left; white-space: nowrap; }
+    table.cards td.name-cell { display: block; text-align: left; font-size: 1.1rem; font-weight: 600; padding: .35rem 0 .55rem; }
+    table.cards td.name-cell::before { content: none; }
+    table.cards select { max-width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -90,16 +111,17 @@ const dashboardContent = `{{define "content"}}
 <h1>Dashboard</h1>
 {{range .Warnings}}<p class="warn">⚠ {{.}}</p>{{end}}
 
-<table>
+<div class="table-scroll">
+<table class="cards">
   <thead><tr>
     <th>Chargepoint</th><th>Role</th><th>Down</th><th>Up</th>
     <th>Connector</th><th>Schedule</th><th>Session</th><th>Energy</th><th>Power</th><th>Last HB</th>
   </tr></thead>
   <tbody>
   {{range .Rows}}
-    <tr class="{{if .Proxied}}proxied{{end}}">
-      <td>{{.Name}}{{if ne .Name .ID}}<br><span class="muted">{{.ID}}</span>{{end}}</td>
-      <td>
+    <tr class="{{if .Proxied}}proxied{{end}}" data-cp-id="{{.ID}}">
+      <td class="name-cell">{{.Name}}{{if ne .Name .ID}}<br><span class="muted">{{.ID}}</span>{{end}}</td>
+      <td data-label="Role">
         <form method="post" action="/admin/mode">
           <input type="hidden" name="id" value="{{.ID}}">
           <select name="mode" onchange="this.form.submit()" title="Change how this chargepoint is controlled">
@@ -109,33 +131,74 @@ const dashboardContent = `{{define "content"}}
           </select>
         </form>
       </td>
-      <td>{{if .Online}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}</td>
-      <td>{{if .ShowUpstream}}{{if .UpstreamUp}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}{{else}}—{{end}}</td>
-      <td>{{.Status}}</td>
-      <td>
+      <td data-label="Down" data-field="down">{{if .Online}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}</td>
+      <td data-label="Up" data-field="up">{{if .ShowUpstream}}{{if .UpstreamUp}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}{{else}}—{{end}}</td>
+      <td data-label="Connector" data-field="status">{{.Status}}</td>
+      <td data-label="Schedule" data-field="schedule">
         {{- if .Schedule}}{{.Schedule}}
           {{- if eq .ScheduleState "open"}} <span class="up">open</span>
           {{- else if eq .ScheduleState "closed"}} <span class="warn">closed</span>
           {{- else if eq .ScheduleState "paused"}} <span class="muted">paused</span>{{end}}
         {{- else}}<span class="muted">—</span>{{end}}
       </td>
-      <td>{{.Session}}</td>
-      <td>{{.Energy}}</td>
-      <td>{{.Power}}</td>
-      <td>{{.LastHeartbeat}}</td>
+      <td data-label="Session" data-field="session">{{.Session}}</td>
+      <td data-label="Energy" data-field="energy">{{.Energy}}</td>
+      <td data-label="Power" data-field="power">{{.Power}}</td>
+      <td data-label="Last HB" data-field="lasthb">{{.LastHeartbeat}}</td>
     </tr>
   {{else}}
     <tr><td colspan="10" class="muted">No chargepoints configured. Add one under “Chargepoints”.</td></tr>
   {{end}}
   </tbody>
 </table>
+</div>
 
 <p class="muted" style="margin-top:1rem">Tip: use a chargepoint's <strong>role</strong> selector to switch between <em>proxied</em> (remotely managed), <em>always on</em>, and <em>scheduled</em> (only when a schedule is assigned). Only one chargepoint can be proxied; switching to proxied reconnects it.</p>
+
+<script>
+(function () {
+  function dot(on) { return on ? '<span class="up">●</span>' : '<span class="down">○</span>'; }
+  function upCell(r) { return r.ShowUpstream ? dot(r.UpstreamUp) : '—'; }
+  function schedCell(r) {
+    if (!r.Schedule) { return '<span class="muted">—</span>'; }
+    if (r.ScheduleState === 'open') { return r.Schedule + ' <span class="up">open</span>'; }
+    if (r.ScheduleState === 'closed') { return r.Schedule + ' <span class="warn">closed</span>'; }
+    if (r.ScheduleState === 'paused') { return r.Schedule + ' <span class="muted">paused</span>'; }
+    return r.Schedule;
+  }
+  function apply(rows) {
+    rows.forEach(function (r) {
+      var tr = document.querySelector('tr[data-cp-id="' + (window.CSS && CSS.escape ? CSS.escape(r.ID) : r.ID) + '"]');
+      if (!tr) { return; }
+      tr.classList.toggle('proxied', !!r.Proxied);
+      function setHTML(f, v) { var el = tr.querySelector('[data-field="' + f + '"]'); if (el) { el.innerHTML = v; } }
+      function setText(f, v) { var el = tr.querySelector('[data-field="' + f + '"]'); if (el) { el.textContent = v; } }
+      setHTML('down', dot(r.Online));
+      setHTML('up', upCell(r));
+      setText('status', r.Status || '');
+      setHTML('schedule', schedCell(r));
+      setText('session', r.Session || '');
+      setText('energy', r.Energy || '');
+      setText('power', r.Power || '');
+      setText('lasthb', r.LastHeartbeat || '');
+      var sel = tr.querySelector('select[name="mode"]');
+      if (sel && document.activeElement !== sel && sel.value !== r.Mode) { sel.value = r.Mode; }
+    });
+  }
+  function tick() {
+    fetch('/admin/state', { credentials: 'same-origin' })
+      .then(function (res) { return res.ok ? res.json() : Promise.reject(); })
+      .then(apply)
+      .catch(function () {});
+  }
+  setInterval(tick, 5000);
+})();
+</script>
 {{end}}`
 
 const chargepointsContent = `{{define "content"}}
 <h1>Chargepoints</h1>
-<div class="card">
+<div class="card table-scroll">
   <table>
     <thead><tr><th>ID</th><th>Name</th><th>Schedule</th><th></th></tr></thead>
     <tbody>
@@ -187,7 +250,7 @@ const schedulesContent = `{{define "content"}}
 <h1>Schedules</h1>
 <p class="muted">Charging windows in local time ({{if .Timezone}}{{.Timezone}}{{else}}server local{{end}}, currently {{.LocalTime}}), applied per chargepoint. A window may cross midnight (e.g. 23:30 → 05:30).</p>
 
-<div class="card">
+<div class="card table-scroll">
   <table>
     <thead><tr><th>Name</th><th>Start</th><th>Stop</th><th></th></tr></thead>
     <tbody>
@@ -263,6 +326,8 @@ const remoteContent = `{{define "content"}}
 const accountContent = `{{define "content"}}
 <h1>Admin account</h1>
 <form class="card" method="post" action="/admin/account">
+  <input type="hidden" name="action" value="password">
+  <strong>Change admin password</strong>
   <label for="username">Username</label>
   <input id="username" name="username" type="text" value="{{.Username}}">
   <label for="password">New password <span class="muted">(min 8 characters)</span></label>
@@ -271,6 +336,28 @@ const accountContent = `{{define "content"}}
   <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
   <p><button type="submit">Update</button></p>
 </form>
+
+<div class="card">
+  <strong>API token</strong>
+  <p class="muted">Read-only + role-change JSON API for integrations (e.g. Home Assistant). Requests send <code>Authorization: Bearer &lt;token&gt;</code> to <code>GET /api/chargepoints</code> and <code>POST /api/chargepoints/&lt;id&gt;/mode</code>. No token = API disabled.</p>
+  {{if .APIToken}}
+    <p>Current token: <code style="word-break:break-all">{{.APIToken}}</code></p>
+    <form method="post" action="/admin/account" style="display:inline-block;margin-right:.4rem">
+      <input type="hidden" name="action" value="gentoken">
+      <button type="submit">Regenerate</button>
+    </form>
+    <form method="post" action="/admin/account" style="display:inline-block" onsubmit="return confirm('Clear the API token? This disables the API and breaks any integration using it.')">
+      <input type="hidden" name="action" value="cleartoken">
+      <button type="submit" class="danger">Clear</button>
+    </form>
+  {{else}}
+    <p class="muted">No token set — the API is disabled.</p>
+    <form method="post" action="/admin/account">
+      <input type="hidden" name="action" value="gentoken">
+      <button type="submit">Generate API token</button>
+    </form>
+  {{end}}
+</div>
 {{end}}`
 
 const loginContent = `{{define "content"}}

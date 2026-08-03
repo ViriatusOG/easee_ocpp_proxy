@@ -14,6 +14,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/ipeel/easee-ocpp-proxy/internal/admin"
+	"github.com/ipeel/easee-ocpp-proxy/internal/api"
 	"github.com/ipeel/easee-ocpp-proxy/internal/clock"
 	"github.com/ipeel/easee-ocpp-proxy/internal/manager"
 	"github.com/ipeel/easee-ocpp-proxy/internal/ocpp"
@@ -27,6 +28,7 @@ func New(m *manager.Manager, logger *slog.Logger) *http.Server {
 	adminHandler := admin.New(m, logger)
 	mux.Handle("/admin", adminHandler)
 	mux.Handle("/admin/", adminHandler)
+	mux.Handle("/api/", api.New(m, logger))
 	mux.HandleFunc("/", ocppHandler(m, logger))
 
 	return &http.Server{

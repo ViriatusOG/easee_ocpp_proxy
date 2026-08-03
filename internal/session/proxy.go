@@ -110,7 +110,7 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 						log.Debug("swallowed charger reply to proxy TriggerMessage", "uid", f.UniqueID)
 						continue
 					}
-					log.Debug("cp → csms", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID)
+					log.Debug("cp → csms", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID, "payload", string(f.Payload))
 					observeProxyFrame(m, id, f, log)
 					if f.Type == ocpp.CALL && f.Action == "BootNotification" {
 						corrMu.Lock()
@@ -173,6 +173,7 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 						if isStartConf {
 							var conf ocpp.StartTransactionConf
 							if json.Unmarshal(f.Payload, &conf) == nil {
+								m.State().Update(id, func(cp *state.CP) { cp.TxnID = conf.TransactionID })
 								log.Info("CSMS assigned transaction", "transactionId", conf.TransactionID, "idTagStatus", conf.IdTagInfo.Status)
 							}
 						}
@@ -180,7 +181,7 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 					if f.Type == ocpp.CALL && notableCSMSCommand(f.Action) {
 						log.Info("csms command", "action", f.Action, "uid", f.UniqueID, "payload", string(f.Payload))
 					} else {
-						log.Debug("csms → cp", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID)
+						log.Debug("csms → cp", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID, "payload", string(f.Payload))
 					}
 				}
 			}
@@ -237,10 +238,14 @@ func anonymiseBoot(f *ocpp.Frame, ba config.BootAnonymise, log *slog.Logger) []b
 // them, and logs the same charge-lifecycle events as a local session (INFO) so
 // proxied sessions have console parity. MeterValues stay silent (too frequent).
 func observeProxyFrame(m *manager.Manager, id string, f *ocpp.Frame, log *slog.Logger) {
+	now := time.Now()
+	m.State().Update(id, func(cp *state.CP) { cp.LastMessage = now })
 	if f.Type != ocpp.CALL {
 		return
 	}
 	switch f.Action {
+	case "Heartbeat":
+		m.State().Update(id, func(cp *state.CP) { cp.LastHeartbeat = now })
 	case "StatusNotification":
 		var req ocpp.StatusNotificationReq
 		if json.Unmarshal(f.Payload, &req) == nil {

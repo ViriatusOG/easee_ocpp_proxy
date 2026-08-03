@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -14,6 +15,27 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	cfg := h.m.ConfigSnapshot()
 	now := time.Now()
 
+	h.render(w, "dashboard", map[string]any{
+		"Title":        "Dashboard",
+		"User":         user,
+		"Rows":         h.buildRows(&cfg, now),
+		"Chargepoints": cfg.Chargepoints,
+		"ProxiedID":    cfg.ProxiedID,
+		"Warnings":     (&cfg).Warnings(),
+		"Flash":        r.URL.Query().Get("msg"),
+	})
+}
+
+// dashboardState returns the dashboard rows as JSON for the in-place background
+// refresh (FR-40) — cookie-authenticated, so it needs no API token.
+func (h *Handler) dashboardState(w http.ResponseWriter, r *http.Request) {
+	cfg := h.m.ConfigSnapshot()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(h.buildRows(&cfg, time.Now()))
+}
+
+// buildRows assembles the per-chargepoint dashboard view models.
+func (h *Handler) buildRows(cfg *config.Config, now time.Time) []cpRow {
 	rows := make([]cpRow, 0, len(cfg.Chargepoints))
 	for _, id := range cfg.Chargepoints {
 		st, _ := h.m.State().Get(id)
@@ -41,17 +63,7 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, row)
 	}
-
-	h.render(w, "dashboard", map[string]any{
-		"Title":        "Dashboard",
-		"User":         user,
-		"Rows":         rows,
-		"Chargepoints": cfg.Chargepoints,
-		"ProxiedID":    cfg.ProxiedID,
-		"Warnings":     (&cfg).Warnings(),
-		"Flash":        r.URL.Query().Get("msg"),
-		"Refresh":      5, // near-live dashboard (FR-40)
-	})
+	return rows
 }
 
 // setProxied handles the dashboard's proxied-CP selection (FR-32b, D-9).
@@ -261,34 +273,52 @@ func (h *Handler) remote(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// account changes the admin username/password (rare task, D-4).
+// account changes the admin username/password and manages the API token (D-4, FR-45).
 func (h *Handler) account(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		username := r.FormValue("username")
-		password := r.FormValue("password")
-		if len(password) < minPasswordLn {
-			redirectMsg(w, r, "/admin/account", "error: password must be at least 8 characters")
+		switch r.FormValue("action") {
+		case "gentoken":
+			if _, err := h.m.GenerateAPIToken(); err != nil {
+				redirectMsg(w, r, "/admin/account", "error: "+err.Error())
+				return
+			}
+			h.log.Info("api token generated")
+			redirectMsg(w, r, "/admin/account", "New API token generated.")
+			return
+		case "cleartoken":
+			if err := h.m.SetAPIToken(""); err != nil {
+				redirectMsg(w, r, "/admin/account", "error: "+err.Error())
+				return
+			}
+			redirectMsg(w, r, "/admin/account", "API token cleared (API disabled).")
+			return
+		default: // password change
+			username := r.FormValue("username")
+			password := r.FormValue("password")
+			if len(password) < minPasswordLn {
+				redirectMsg(w, r, "/admin/account", "error: password must be at least 8 characters")
+				return
+			}
+			if password != r.FormValue("confirm") {
+				redirectMsg(w, r, "/admin/account", "error: passwords do not match")
+				return
+			}
+			hash, err := hashPassword(password)
+			if err != nil {
+				http.Error(w, "hash error", http.StatusInternalServerError)
+				return
+			}
+			if username == "" {
+				username = h.m.ConfigSnapshot().Admin.Username
+			}
+			if err := h.m.SetAdminCredentials(username, hash); err != nil {
+				http.Error(w, "save error", http.StatusInternalServerError)
+				return
+			}
+			h.log.Info("admin credentials changed", "username", username)
+			redirectMsg(w, r, "/admin/account", "Admin credentials updated.")
 			return
 		}
-		if password != r.FormValue("confirm") {
-			redirectMsg(w, r, "/admin/account", "error: passwords do not match")
-			return
-		}
-		hash, err := hashPassword(password)
-		if err != nil {
-			http.Error(w, "hash error", http.StatusInternalServerError)
-			return
-		}
-		if username == "" {
-			username = h.m.ConfigSnapshot().Admin.Username
-		}
-		if err := h.m.SetAdminCredentials(username, hash); err != nil {
-			http.Error(w, "save error", http.StatusInternalServerError)
-			return
-		}
-		h.log.Info("admin credentials changed", "username", username)
-		redirectMsg(w, r, "/admin/account", "Admin credentials updated.")
-		return
 	}
 
 	user, _ := h.currentUser(r)
@@ -297,6 +327,7 @@ func (h *Handler) account(w http.ResponseWriter, r *http.Request) {
 		"Title":    "Admin account",
 		"User":     user,
 		"Username": cfg.Admin.Username,
+		"APIToken": cfg.APIToken,
 		"Flash":    r.URL.Query().Get("msg"),
 	})
 }

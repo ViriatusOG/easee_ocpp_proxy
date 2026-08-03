@@ -57,3 +57,7 @@ boot_anonymise:
 admin:
   username: admin
   password_hash: ""
+
+# Bearer token for the JSON API used by integrations e.g. Home Assistant (FR-46).
+# Empty = API disabled. Generate/manage it from the admin UI (Account → API token).
+api_token: ""

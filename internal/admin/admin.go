@@ -5,12 +5,14 @@
 package admin
 
 import (
-	"crypto/rand"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"html/template"
 	"log/slog"
 	"net/http"
-	"sync"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -20,7 +22,7 @@ import (
 
 const (
 	cookieName    = "easee_admin"
-	sessionTTL    = 8 * time.Hour
+	sessionTTL    = 30 * 24 * time.Hour // long-lived so a trusted device stays signed in
 	minPasswordLn = 8
 )
 
@@ -30,28 +32,20 @@ type Handler struct {
 	log  *slog.Logger
 	tmpl map[string]*template.Template
 	mux  *http.ServeMux
-
-	mu       sync.Mutex
-	sessions map[string]session // token → session
-}
-
-type session struct {
-	username string
-	expires  time.Time
 }
 
 // New builds the admin Handler and its route table.
 func New(m *manager.Manager, log *slog.Logger) *Handler {
 	h := &Handler{
-		m:        m,
-		log:      log,
-		tmpl:     buildTemplates(),
-		sessions: make(map[string]session),
+		m:    m,
+		log:  log,
+		tmpl: buildTemplates(),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/admin/login", h.login)
 	mux.HandleFunc("/admin/logout", h.logout)
+	mux.HandleFunc("/admin/state", h.requireAuth(h.dashboardState))
 	mux.HandleFunc("/admin/proxied", h.requireAuth(h.setProxied))
 	mux.HandleFunc("/admin/mode", h.requireAuth(h.setMode))
 	mux.HandleFunc("/admin/chargepoints", h.requireAuth(h.chargepoints))
@@ -72,29 +66,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // session cookie.
 func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := h.currentUser(r); !ok {
+		user, ok := h.currentUser(r)
+		if !ok {
 			http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 			return
 		}
+		h.startSession(w, user) // sliding expiry: refresh the cookie on each request
 		next(w, r)
 	}
 }
 
+// currentUser returns the signed-in user from the session cookie, if valid. Sessions
+// are stateless: the cookie is an HMAC over (username, expiry) keyed by the admin
+// password hash, so it survives restarts and is invalidated by a password change.
 func (h *Handler) currentUser(r *http.Request) (string, bool) {
 	c, err := r.Cookie(cookieName)
 	if err != nil {
 		return "", false
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	s, ok := h.sessions[c.Value]
-	if !ok || time.Now().After(s.expires) {
-		if ok {
-			delete(h.sessions, c.Value)
-		}
+	key := h.m.ConfigSnapshot().Admin.PasswordHash
+	if key == "" {
 		return "", false
 	}
-	return s.username, true
+	return verifySession(c.Value, key)
 }
 
 // login handles both first-run setup (when no admin password is set) and normal
@@ -158,34 +152,54 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(cookieName); err == nil {
-		h.mu.Lock()
-		delete(h.sessions, c.Value)
-		h.mu.Unlock()
-	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/admin", MaxAge: -1})
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 }
 
 func (h *Handler) startSession(w http.ResponseWriter, username string) {
-	token := randomToken()
-	h.mu.Lock()
-	h.sessions[token] = session{username: username, expires: time.Now().Add(sessionTTL)}
-	h.mu.Unlock()
+	key := h.m.ConfigSnapshot().Admin.PasswordHash
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
-		Value:    token,
+		Value:    signSession(username, key, time.Now().Add(sessionTTL).Unix()),
 		Path:     "/admin",
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
 }
 
-func randomToken() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+// signSession builds a stateless session token: "username|expiry|HMAC".
+func signSession(username, key string, expiry int64) string {
+	msg := username + "|" + strconv.FormatInt(expiry, 10)
+	return msg + "|" + mac(msg, key)
+}
+
+// verifySession validates a session token and returns the username if the signature
+// is valid and it has not expired.
+func verifySession(value, key string) (string, bool) {
+	i := strings.LastIndex(value, "|")
+	if i < 0 {
+		return "", false
+	}
+	msg, sig := value[:i], value[i+1:]
+	if !hmac.Equal([]byte(sig), []byte(mac(msg, key))) {
+		return "", false
+	}
+	j := strings.LastIndex(msg, "|") // msg = username|expiry
+	if j < 0 {
+		return "", false
+	}
+	exp, err := strconv.ParseInt(msg[j+1:], 10, 64)
+	if err != nil || time.Now().Unix() > exp {
+		return "", false
+	}
+	return msg[:j], true
+}
+
+func mac(msg, key string) string {
+	m := hmac.New(sha256.New, []byte(key))
+	m.Write([]byte(msg))
+	return hex.EncodeToString(m.Sum(nil))
 }
 
 // render executes a named page template, logging (not exposing) any error.

@@ -19,3 +19,10 @@
 /vendor/
 *.test
 *.out
+
+# Python (Home Assistant component)
+__pycache__/
+*.pyc
+
+# Packaged HA component (built from the source dir)
+*.zip

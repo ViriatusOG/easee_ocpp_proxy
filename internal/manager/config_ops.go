@@ -1,6 +1,8 @@
 package manager
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -247,6 +249,27 @@ func (m *Manager) SetBootAnonymise(b config.BootAnonymise) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cfg.BootAnonymise = b
+	return m.cfg.Save()
+}
+
+// GenerateAPIToken creates a new random API token, persists it, and returns it (FR-45).
+func (m *Manager) GenerateAPIToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	token := hex.EncodeToString(b)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.APIToken = token
+	return token, m.cfg.Save()
+}
+
+// SetAPIToken sets or clears the API token ("" disables the API) (FR-45).
+func (m *Manager) SetAPIToken(token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.APIToken = token
 	return m.cfg.Save()
 }
 

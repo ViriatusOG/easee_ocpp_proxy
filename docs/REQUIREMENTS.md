@@ -422,10 +422,34 @@ relay for the proxied CP), so it can observe live state and surface it on the da
 - **FR-39** Per-CP state is **in-memory/live** and reset on restart; persistent historical
   transaction logging is out of scope (per §1) unless later requested. Units SHALL be shown
   human-readably (kWh, kW, timestamps in local time).
-- **FR-40** The dashboard SHALL refresh CP state on a short interval (e.g. via periodic
-  page refresh or a lightweight poll) so an operator sees near-current status. (Given the
-  HTML-only decision D-5, a simple meta-refresh or small poll is acceptable — no WebSocket
-  admin channel required.)
+- **FR-40** The dashboard SHALL refresh CP state on a short interval so an operator sees
+  near-current status, **updating in place** (a background `fetch` of a cookie-authenticated
+  JSON state endpoint that patches the affected cells) rather than reloading the whole page
+  — so scroll position and an open role dropdown are preserved. No WebSocket admin channel
+  is required.
+
+### 5.9 Usability & external integration
+
+- **FR-45** The admin UI SHALL be usable on a mobile browser: responsive layout (the
+  dashboard reflows to per-chargepoint cards on narrow screens; settings tables scroll),
+  and the login session SHALL persist on a device across proxy restarts to avoid repeated
+  sign-in. Sessions are a stateless signed cookie (HMAC over username+expiry keyed by the
+  admin password hash) — surviving restarts, expiring after a sliding window, and
+  invalidated by a password change.
+- **FR-46** The proxy SHALL expose a **JSON API** for external integrations, separate from
+  the HTML admin UI and authenticated with a **bearer token** (config `api_token`; empty =
+  API disabled). It provides read-only chargepoint state and the **role/mode change**
+  capability only (no admin/settings functions):
+  - `GET /api/chargepoints` → id, name, role, selectable modes, online/upstream, connector
+    status, session, energy (kWh), power (kW), schedule + window state.
+  - `POST /api/chargepoints/{id}/mode` `{"mode": "proxied"|"always_on"|"scheduled"}` with
+    the same constraints as the dashboard (one proxied; scheduled only if a schedule is
+    assigned).
+- **FR-47** A **Home Assistant** custom integration (local polling, config-flow) SHALL
+  consume that API and expose each chargepoint as an HA **device** — sensors for status,
+  power, session energy, session, and schedule; binary sensors for online and charging;
+  and a **role `select`** mirroring the dashboard's constraints. No admin functions are
+  exposed through Home Assistant.
 
 ---
 

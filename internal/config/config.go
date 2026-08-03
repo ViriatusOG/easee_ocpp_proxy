@@ -73,6 +73,7 @@ type Config struct {
 	BootAnonymise      BootAnonymise     `yaml:"boot_anonymise"`
 	LocalAutoStart     LocalAutoStart    `yaml:"local_auto_start"`
 	Admin              Admin             `yaml:"admin"`
+	APIToken           string            `yaml:"api_token"` // bearer token for the JSON API (empty = API disabled) (FR-45)
 
 	path string // source path, remembered for Save()
 }

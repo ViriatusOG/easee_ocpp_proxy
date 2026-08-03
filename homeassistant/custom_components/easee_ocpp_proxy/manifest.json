@@ -1,0 +1,12 @@
+{
+  "domain": "easee_ocpp_proxy",
+  "name": "Easee OCPP Proxy",
+  "codeowners": ["@ipeel"],
+  "config_flow": true,
+  "documentation": "https://github.com/ipeel/easee-ocpp-proxy",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/ipeel/easee-ocpp-proxy/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,95 +1,154 @@
 # Easee OCPP Proxy
 
-A local-network OCPP 1.6J proxy for Easee One chargepoints. It either auto-authorises
-charge sessions locally, or transparently proxies **one** chargepoint to a remote OCPP
-Central System (CSMS) over an authenticated, encrypted (`wss://`) link — while accepting
-plain `ws://` from the Easee side (no certificate upload required).
+A small, self-hosted proxy that sits on your local network between your EV chargepoints
+and (optionally) a remote OCPP Central System (CSMS). For each chargepoint it either
+**auto-authorises charging locally** or **transparently proxies one chargepoint** to a
+remote CSMS over an authenticated, encrypted link — while the chargers themselves only
+ever speak plain, unencrypted OCPP on your LAN.
 
-See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) and
-[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the full design.
+It's built and tested against the **Easee One**, but it speaks standard **OCPP 1.6J**, so
+it should work with **any charger brand that supports local OCPP 1.6** (the Easee-specific
+conveniences below simply become no-ops for chargers that don't need them).
 
-## Status
+> Full design rationale lives in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) and
+> [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
-**Milestones 1–3 complete.**
+## Why — problems it solves
 
-Scheduling & aliases (FR-41/FR-42):
+- **No certificate wrangling.** A charger's native *secure* OCPP requires uploading a TLS
+  certificate into the unit, which is fiddly and some chargers' certificate validation is
+  notoriously picky. The proxy terminates TLS itself: the charger connects over plain
+  `ws://` on the trusted LAN, and the proxy makes the encrypted, authenticated `wss://`
+  connection upstream.
+- **Charge-point ID length limits.** Some chargers cap the OCPP charge point identity at
+  25 characters, while many remote servers issue longer identities (e.g. 36-character
+  UUIDs). The proxy maps a short local ID to the longer upstream ID at the connection
+  layer, so both sides are happy.
+- **Manufacturer disclosure.** The only place OCPP reveals the manufacturer is the
+  `BootNotification`. The proxy can rewrite the vendor / model / firmware / serial to
+  values you configure before forwarding it to the remote server.
+- **Provisioning on reconnect.** When you switch a charger to remote management it
+  reconnects *without rebooting*, so a remote server would never re-run its post-boot
+  configuration and could mis-account sessions. The proxy asks the charger to re-present
+  its boot on every upstream connect, so the remote server always provisions and tracks
+  the session correctly.
+- **Scheduling when the built-in scheduler is disabled.** Putting a charger onto OCPP
+  typically disables its own charging schedules. The proxy provides its own DST-aware
+  charging windows for locally-managed chargers.
+- **One box, mixed roles.** Run several chargers with local auto-authorisation while
+  handing exactly one to a remote server — and switch which one, at runtime, from a web
+  dashboard, a phone, or Home Assistant.
 
-- Named charging schedules (start/stop, local wall-clock **DST-aware**, may cross
-  midnight), defined centrally and assigned per chargepoint. Outside the window the
-  proxy won't auto-start; it starts when the window opens (car plugged in) and stops
-  (RemoteStopTransaction) when it closes. Optional IANA timezone override.
-- Per-chargepoint friendly **alias** (e.g. "Garage Left") shown on the dashboard.
-- Dashboard role selector per chargepoint: **proxied**, **always on**, or **scheduled**
-  (offered only when a schedule is assigned). Flipping between always-on and scheduled
-  keeps the schedule assignment and applies immediately without reconnecting.
+## Features
 
-Milestone 3 (admin dashboard):
+- **Accepts multiple chargers** over plain `ws://` on a single port, gated by an
+  allow-list of chargepoint IDs, with `ocpp1.6` subprotocol negotiation.
+- **Local auto-authorisation** — the proxy acts as the Central System, auto-accepting the
+  charge session. Optional **auto-start** (`RemoteStartTransaction`) for chargers that
+  wait for backend authorisation before charging.
+- **Upstream proxying** of one chargepoint to a remote CSMS: `wss://` with HTTP Basic
+  auth, transparent bidirectional relay (including remote-initiated commands), short→long
+  ID mapping, BootNotification anonymisation, and forced re-provisioning on reconnect.
+- **DST-aware charging schedules** — named windows (`HH:MM`, may cross midnight), defined
+  centrally and assigned per chargepoint, evaluated in a configurable/local timezone.
+  Per-chargepoint **always-on ⇄ scheduled** toggle that keeps the schedule assigned.
+- **Friendly aliases** (e.g. "Garage Left") shown across the UI.
+- **Admin dashboard** — mobile-responsive, live in-place refresh (no full-page reloads),
+  persistent sign-in (survives restarts), one-tap role switching, and settings for
+  chargepoints, schedules, the remote server, and credentials. Config changes persist.
+- **Robust connection handling** — per-connection isolation, liveness watchdogs (closes a
+  link that goes silent for 2× the heartbeat interval, timed independently per direction
+  for a proxied link), and clean teardown when either side drops.
+- **JSON API + Home Assistant integration** — a token-authenticated API exposes state and
+  role control; the bundled custom integration surfaces each chargepoint as a Home
+  Assistant device (see [homeassistant/](homeassistant/)).
+- **Single static binary**, structured logging, systemd unit.
 
-- Authenticated `/admin` UI (username + bcrypt password, session cookie) with a
-  first-run setup page when no password is set.
-- Dashboard home page: live per-chargepoint state (connection, connector status,
-  session, energy/power) with a 5s auto-refresh, plus one-click selection of the
-  remotely-managed chargepoint.
-- Settings pages: add/remove chargepoints, remote server + BootNotification
-  anonymisation, and admin credentials. Changes persist to the config file.
+## How it works
 
-Earlier milestones:
+```
+   charger #1 ──ws (ocpp1.6)──┐
+   charger #2 ──ws (ocpp1.6)──┤   ┌──────────────┐   wss (ocpp1.6 + auth)
+   charger #N ──ws (ocpp1.6)──┼──▶│  easee-proxy │ ─────────────────────▶  remote CSMS
+                              │   │   :PORT      │        (proxied charger only)
+                              │   │  /     OCPP  │
+                              │   │  /admin  UI  │
+                              │   │  /api    JSON│
+                              └──▶└──────────────┘
+```
 
-Milestone 1 (skeleton):
-
-- Single-port HTTP + WebSocket server (`ws://` OCPP and `http://` `/admin` on one port).
-- Chargepoint allow-list enforcement and `ocpp1.6` subprotocol negotiation.
-- OCPP-J frame parsing/building.
-- Config load, validation, and atomic save.
-- `/admin` route reserved (placeholder page).
-
-Milestone 2 (local auto-authorisation):
-
-- Local Central System: auto-accepts BootNotification, Heartbeat, Authorize,
-  Start/StopTransaction (with generated transaction ids), StatusNotification,
-  MeterValues, DataTransfer; unknown actions get `CALLERROR NotSupported`.
-- Live per-chargepoint state (connection, connector status, session, energy/power),
-  with energy normalised from the reported unit (kWh/Wh).
-- Downstream liveness watchdog: closes a connection silent for 2× the heartbeat
-  interval, using an injectable clock for deterministic tests.
-
-Milestone 4 (upstream proxying):
-
-- Relays the single proxied chargepoint to the remote CSMS over `wss://` with HTTP
-  Basic auth (Profile 2), mapping the short Easee CP ID to the longer upstream ID via
-  the URL.
-- Transparent bidirectional relay (including CSMS-initiated commands), with
-  `BootNotification` vendor/model/firmware/serial anonymised before it goes upstream.
-- Observes relayed frames to populate the dashboard (status, session, energy) for the
-  proxied CP; either side closing tears down both; idle watchdog on both links.
-
-Milestone 5 (lifecycle refinements):
-
-- Proxied liveness is timed independently per direction (so a one-sided dead link is
-  detected) and tightened to 2× the CSMS-supplied `BootNotification.conf` interval once
-  observed.
-
-Not yet implemented: remote-password encryption at rest (FR-35). Upstream reconnection
-stays Easee-driven (the charger auto-reconnects ~every 10s, which already throttles
-retries — Q9 default).
+The chargers connect over plain `ws://`. Non-proxied chargers are served locally; the one
+proxied charger is relayed to the remote CSMS over `wss://`. The admin UI and JSON API are
+served on the same port.
 
 ## Prerequisites
 
-- **Go 1.22+** — not currently installed on the dev machine. Install from
-  <https://go.dev/dl/> (or `winget install GoLang.Go` on Windows), then reopen the shell.
+- **Go 1.22 or newer** to build (see `go.mod` for the exact toolchain version).
+  Install from <https://go.dev/dl/> (or `winget install GoLang.Go` on Windows).
+- A host to run it on (Linux recommended; any OS Go targets works).
+- Chargers that can be pointed at a local OCPP 1.6J URL (plain `ws://`).
 
-## Build & run
+## Build
 
 ```bash
-go mod tidy          # fetches github.com/coder/websocket and gopkg.in/yaml.v3
-go build ./...
-cp config.example.yaml config.yaml   # then edit
+go build -o easee-proxy ./cmd/proxy
+```
+
+This fetches the few dependencies and produces a single static binary.
+
+## Run
+
+```bash
+cp config.example.yaml config.yaml   # then edit to taste
 ./easee-proxy -config config.yaml
 ```
 
-The proxy logs to stderr (structured). Point an allow-listed Easee at
-`ws://<proxy-host>:9000/<chargepoint-id>`; open `http://<proxy-host>:9000/admin` for the
-(placeholder) admin UI.
+Then:
+
+1. Open `http://<host>:9000/admin` and complete the **first-run setup** (create an admin
+   password).
+2. On the **Chargepoints** page, add each charger's OCPP identity (the ID it presents in
+   its OCPP URL). Optionally give it an alias.
+3. Point each charger's OCPP endpoint at `ws://<host>:9000/<chargepoint-id>` (plain
+   `ws://`, subprotocol `ocpp1.6`, no TLS, no auth).
+4. To hand one charger to a remote server: configure it on the **Remote server** page,
+   then pick that charger's role as **proxied** on the dashboard.
+
+The `-debug` flag adds verbose per-frame logging for troubleshooting.
+
+## Install (Linux / systemd)
+
+```bash
+sudo install -m 0755 easee-proxy /usr/local/bin/easee-proxy
+sudo useradd --system --no-create-home easee-proxy
+sudo mkdir -p /etc/easee-proxy && sudo cp config.example.yaml /etc/easee-proxy/config.yaml
+sudo cp deploy/easee-proxy.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now easee-proxy
+```
+
+The unit runs as a dedicated non-root user and keeps `config.yaml` writable (admin changes
+are persisted back to it). The admin UI and API are plain HTTP on the shared port — keep
+the service on a trusted LAN and don't expose the port to the internet.
+
+## Configuration
+
+Everything is in one YAML file (`config.example.yaml` is documented). Most settings are
+also editable from the admin UI, which writes changes back atomically. Highlights:
+
+- `chargepoints` — allow-list of charger IDs; `aliases` — friendly names.
+- `proxied_id` — which single charger (if any) is proxied.
+- `remote` — the upstream CSMS URL, upstream ID, credentials.
+- `boot_anonymise` — the vendor/model/etc. presented upstream.
+- `schedules` / `device_schedules` / `timezone` — charging windows.
+- `local_auto_start` — auto-start behaviour for local chargers.
+- `api_token` — enables the JSON API (manage it from Admin → Account).
+
+## Home Assistant
+
+A custom integration under [homeassistant/custom_components/easee_ocpp_proxy/](homeassistant/custom_components/easee_ocpp_proxy/)
+exposes each chargepoint as a Home Assistant device with sensors (status, power, session
+energy, session, schedule), binary sensors (online, charging), and a **role** selector
+(view + role control only, no admin functions). See [homeassistant/README.md](homeassistant/README.md).
 
 ## Test
 
@@ -97,16 +156,22 @@ The proxy logs to stderr (structured). Point an allow-listed Easee at
 go test ./...
 ```
 
-## Layout
+## Project layout
 
 ```
-cmd/proxy         entry point
-internal/config   config load / validate / atomic save
-internal/ocpp     OCPP-J framing
-internal/manager  shared state: config, allow-list, role classification
-internal/server   single-port HTTP + WebSocket router
-internal/session  downstream connection handler (observe-only in M1)
-internal/admin    /admin handler (placeholder in M1)
-deploy/           systemd unit
-docs/             requirements + implementation plan
+cmd/proxy                       entry point
+internal/config                 config load / validate / atomic save
+internal/ocpp                   OCPP-J framing + message types
+internal/manager                shared state: config, allow-list, roles, schedules, sessions
+internal/schedule               charging-window evaluation (DST-aware)
+internal/clock                  injectable clock for deterministic liveness tests
+internal/state                  live per-chargepoint state
+internal/session                downstream handler: local auto-authorise + proxy relay
+internal/upstream               dials the remote CSMS
+internal/server                 single-port HTTP + WebSocket router
+internal/admin                  /admin web UI
+internal/api                    /api JSON API
+deploy/                         systemd unit
+homeassistant/                  Home Assistant custom integration
+docs/                           requirements + implementation plan
 ```

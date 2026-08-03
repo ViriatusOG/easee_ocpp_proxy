@@ -68,6 +68,7 @@ type Config struct {
 	Timezone           string            `yaml:"timezone"`         // IANA zone for schedules; "" = server local, DST-aware (FR-41)
 	Schedules          []Schedule        `yaml:"schedules"`        // central schedule definitions (FR-41)
 	DeviceSchedules    map[string]string `yaml:"device_schedules"` // CP ID → schedule name (FR-41)
+	SchedulePaused     map[string]bool   `yaml:"schedule_paused"`  // CP IDs whose assigned schedule is paused (always-on) (FR-43)
 	Remote             Remote            `yaml:"remote"`
 	BootAnonymise      BootAnonymise     `yaml:"boot_anonymise"`
 	LocalAutoStart     LocalAutoStart    `yaml:"local_auto_start"`
@@ -113,6 +114,17 @@ func (c *Config) Location() *time.Location {
 		return loc
 	}
 	return time.Local
+}
+
+// HasSchedule reports whether a schedule is assigned to the CP.
+func (c *Config) HasSchedule(id string) bool {
+	return c.DeviceSchedules[id] != ""
+}
+
+// ScheduleActive reports whether the CP has an assigned schedule that is currently
+// enforced (assigned and not paused / "always-on") (FR-43).
+func (c *Config) ScheduleActive(id string) bool {
+	return c.DeviceSchedules[id] != "" && !c.SchedulePaused[id]
 }
 
 // FindSchedule returns the named schedule.

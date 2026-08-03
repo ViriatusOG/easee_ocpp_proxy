@@ -73,6 +73,7 @@ func (m *Manager) snapshotLocked() config.Config {
 	c.Schedules = append([]config.Schedule(nil), m.cfg.Schedules...)
 	c.Aliases = copyMap(m.cfg.Aliases)
 	c.DeviceSchedules = copyMap(m.cfg.DeviceSchedules)
+	c.SchedulePaused = copyBoolMap(m.cfg.SchedulePaused)
 	return c
 }
 
@@ -87,12 +88,27 @@ func copyMap(in map[string]string) map[string]string {
 	return out
 }
 
+func copyBoolMap(in map[string]bool) map[string]bool {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 // AllowedAt reports whether charging is permitted for cpID at time t. A CP with no
 // assigned schedule is always allowed. Config errors fail open (allowed) so a typo
 // never silently blocks charging (FR-41).
 func (m *Manager) AllowedAt(cpID string, t time.Time) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	// Paused schedule = always-on: charging allowed at any time (FR-43).
+	if m.cfg.SchedulePaused[cpID] {
+		return true
+	}
 	name := m.cfg.DeviceSchedules[cpID]
 	if name == "" {
 		return true

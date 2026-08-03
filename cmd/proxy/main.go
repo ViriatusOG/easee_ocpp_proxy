@@ -26,9 +26,14 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to the YAML config file")
+	debug := flag.Bool("debug", false, "enable debug logging (verbose per-frame OCPP traces)")
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	level := slog.LevelInfo
+	if *debug {
+		level = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {

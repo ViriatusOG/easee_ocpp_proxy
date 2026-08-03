@@ -255,6 +255,13 @@ OCPP 1.6 CALLs. At minimum:
     (charging allowed) rather than silently block charging.
 - **FR-42** Each chargepoint MAY be given a friendly **alias** (e.g. "Garage Left") which
   the dashboard displays in place of the raw CP ID.
+- **FR-43** A chargepoint's control mode SHALL be selectable from the dashboard as one of
+  **proxied**, **always-on** (local, schedule ignored), or **scheduled** (local, schedule
+  enforced). The **scheduled** option SHALL be offered only when a schedule is assigned to
+  that CP. Switching between always-on and scheduled SHALL **retain** the schedule
+  assignment (a paused schedule is kept, not deleted) and take effect at runtime without
+  reconnecting the CP; switching to/from proxied reconnects it (D-9). Assigning a schedule
+  SHALL default the CP to scheduled (enforced).
 
 ### 5.4 Upstream proxying (proxied CP)
 
@@ -290,6 +297,14 @@ OCPP 1.6 CALLs. At minimum:
   `BootNotification`; no `DataTransfer` was emitted. The proxy SHALL nonetheless retain a
   pluggable filter for `DataTransfer.vendorId`, defaulting to **pass-through**, so a future
   leak can be handled without structural change (Q3a resolved).
+- **FR-44** On establishing the upstream link, the proxy SHALL send the charger a
+  `TriggerMessage(BootNotification)` so it (re)sends its `BootNotification`, ensuring the
+  CSMS registers the connection and runs its post-boot provisioning **even on a
+  mode-switch reconnect that does not reboot the charger**. Without this, a proxied
+  charger that merely reconnects never re-presents a boot, so the CSMS leaves it
+  unprovisioned and mis-accounts the session (observed: a "session open, 0 kWh" charge).
+  A charger that genuinely rebooted may send two BootNotifications (its own plus the
+  triggered one); this is harmless (the CSMS re-provisions).
 
 ### 5.5 Connection lifecycle & liveness
 

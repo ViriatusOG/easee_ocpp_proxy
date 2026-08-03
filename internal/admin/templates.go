@@ -100,22 +100,25 @@ const dashboardContent = `{{define "content"}}
     <tr class="{{if .Proxied}}proxied{{end}}">
       <td>{{.Name}}{{if ne .Name .ID}}<br><span class="muted">{{.ID}}</span>{{end}}</td>
       <td>
-        {{if .Proxied}}
-        <form method="post" action="/admin/proxied" onsubmit="return confirm('Stop remotely managing {{.Name}}? It will switch to local auto-authorisation and the remote session is disconnected.')">
-          <input type="hidden" name="proxied_id" value="__none__">
-          <button type="submit" class="badge proxied" title="Remotely managed — click to switch to local">proxied</button>
+        <form method="post" action="/admin/mode">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <select name="mode" onchange="this.form.submit()" title="Change how this chargepoint is controlled">
+            <option value="proxied" {{if eq .Mode "proxied"}}selected{{end}}>proxied</option>
+            <option value="always_on" {{if eq .Mode "always_on"}}selected{{end}}>always on</option>
+            {{if .HasSchedule}}<option value="scheduled" {{if eq .Mode "scheduled"}}selected{{end}}>scheduled</option>{{end}}
+          </select>
         </form>
-        {{else}}
-        <form method="post" action="/admin/proxied" onsubmit="return confirm('Make {{.Name}} the remotely-managed chargepoint? This disconnects it and any current remote session so it reconnects proxied.')">
-          <input type="hidden" name="proxied_id" value="{{.ID}}">
-          <button type="submit" class="badge" title="Auto-authorised locally — click to manage remotely">local</button>
-        </form>
-        {{end}}
       </td>
       <td>{{if .Online}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}</td>
       <td>{{if .ShowUpstream}}{{if .UpstreamUp}}<span class="up">●</span>{{else}}<span class="down">○</span>{{end}}{{else}}—{{end}}</td>
       <td>{{.Status}}</td>
-      <td>{{if .Schedule}}{{.Schedule}}{{if eq .WindowState "open"}} <span class="up">open</span>{{else}} <span class="warn">closed</span>{{end}}{{else}}<span class="muted">always</span>{{end}}</td>
+      <td>
+        {{- if .Schedule}}{{.Schedule}}
+          {{- if eq .ScheduleState "open"}} <span class="up">open</span>
+          {{- else if eq .ScheduleState "closed"}} <span class="warn">closed</span>
+          {{- else if eq .ScheduleState "paused"}} <span class="muted">paused</span>{{end}}
+        {{- else}}<span class="muted">—</span>{{end}}
+      </td>
       <td>{{.Session}}</td>
       <td>{{.Energy}}</td>
       <td>{{.Power}}</td>
@@ -127,7 +130,7 @@ const dashboardContent = `{{define "content"}}
   </tbody>
 </table>
 
-<p class="muted" style="margin-top:1rem">Tip: click a chargepoint's <strong>role</strong> to change which one is remotely managed. Exactly one can be proxied; switching reconnects the affected chargepoints.</p>
+<p class="muted" style="margin-top:1rem">Tip: use a chargepoint's <strong>role</strong> selector to switch between <em>proxied</em> (remotely managed), <em>always on</em>, and <em>scheduled</em> (only when a schedule is assigned). Only one chargepoint can be proxied; switching to proxied reconnects it.</p>
 {{end}}`
 
 const chargepointsContent = `{{define "content"}}

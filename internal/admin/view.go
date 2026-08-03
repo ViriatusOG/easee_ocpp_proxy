@@ -28,8 +28,10 @@ type cpRow struct {
 	Power         string
 	LastHeartbeat string
 	LastMessage   string
+	Mode          string // "proxied" | "scheduled" | "always_on" (FR-43)
+	HasSchedule   bool   // a schedule is assigned (offer the "scheduled" option)
 	Schedule      string // assigned schedule name, or ""
-	WindowState   string // "open" | "closed" | "" (no schedule)
+	ScheduleState string // "open" | "closed" | "paused" | "" (n/a)
 }
 
 func makeRow(id string, proxied bool, st state.CP, now time.Time) cpRow {

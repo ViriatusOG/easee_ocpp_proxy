@@ -19,6 +19,9 @@ Scheduling & aliases (FR-41/FR-42):
   proxy won't auto-start; it starts when the window opens (car plugged in) and stops
   (RemoteStopTransaction) when it closes. Optional IANA timezone override.
 - Per-chargepoint friendly **alias** (e.g. "Garage Left") shown on the dashboard.
+- Dashboard role selector per chargepoint: **proxied**, **always on**, or **scheduled**
+  (offered only when a schedule is assigned). Flipping between always-on and scheduled
+  keeps the schedule assignment and applies immediately without reconnecting.
 
 Milestone 3 (admin dashboard):
 

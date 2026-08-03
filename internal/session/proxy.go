@@ -70,10 +70,25 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 	})
 	defer upstreamWD.stop()
 
-	// bootUID correlates the CSMS's BootNotification.conf back to the boot we forwarded,
-	// so we can read the CSMS-supplied heartbeat interval and tighten liveness (FR-25).
-	var bootMu sync.Mutex
-	var bootUID string
+	// correlate CSMS CALLRESULTs back to the requests we forwarded: bootUID for the
+	// heartbeat interval (FR-25), startTxnUID to observe the transactionId the CSMS
+	// assigns (the charger must echo this back — a mismatch breaks CSMS accounting).
+	var corrMu sync.Mutex
+	var bootUID, startTxnUID string
+
+	// Force a provisioning cycle (FR-44): ask the charger to (re)send its
+	// BootNotification so the CSMS registers this connection and runs its post-boot
+	// configuration — even on a mode-switch reconnect that wouldn't otherwise reboot
+	// the charger. Sent before the relay goroutines start, so this is a safe single
+	// write; the resulting BootNotification flows up through the normal anonymise path.
+	triggerUID := m.NextMessageID()
+	if trigger, terr := ocpp.Call(triggerUID, "TriggerMessage", ocpp.TriggerMessageReq{RequestedMessage: "BootNotification"}); terr == nil {
+		if werr := downstream.Write(ctx, websocket.MessageText, trigger); werr != nil {
+			log.Warn("failed to send BootNotification trigger", "err", werr)
+		} else {
+			log.Info("requested BootNotification from charger (provisioning trigger)")
+		}
+	}
 
 	// downstream → upstream (anonymise BootNotification, observe telemetry)
 	go func() {
@@ -81,7 +96,7 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 		for {
 			typ, data, err := downstream.Read(ctx)
 			if err != nil {
-				log.Info("downstream closed; tearing down upstream", "reason", disconnectReason(err))
+				log.Info("downstream closed; tearing down upstream", "reason", reasonFor(ctx, err))
 				log.Debug("downstream disconnect detail", "err", err)
 				return
 			}
@@ -89,13 +104,24 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 			out := data
 			if typ == websocket.MessageText {
 				if f, perr := ocpp.Parse(data); perr == nil {
+					// The charger's reply to our own TriggerMessage must not be relayed
+					// upstream — the CSMS never sent that request (FR-44).
+					if (f.Type == ocpp.CALLRESULT || f.Type == ocpp.CALLERROR) && f.UniqueID == triggerUID {
+						log.Debug("swallowed charger reply to proxy TriggerMessage", "uid", f.UniqueID)
+						continue
+					}
 					log.Debug("cp → csms", "kind", f.Type.String(), "action", f.Action, "uid", f.UniqueID)
 					observeProxyFrame(m, id, f, log)
 					if f.Type == ocpp.CALL && f.Action == "BootNotification" {
-						bootMu.Lock()
+						corrMu.Lock()
 						bootUID = f.UniqueID
-						bootMu.Unlock()
+						corrMu.Unlock()
 						out = anonymiseBoot(f, cfg.BootAnonymise, log)
+					}
+					if f.Type == ocpp.CALL && f.Action == "StartTransaction" {
+						corrMu.Lock()
+						startTxnUID = f.UniqueID
+						corrMu.Unlock()
 					}
 				}
 			}
@@ -119,7 +145,7 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 					// (bad credentials, or the charge point already connected).
 					log.Warn("upstream closed before sending any OCPP message — the CSMS rejected the session; check the remote username/password (authorization key) and that this charge point isn't already connected elsewhere", "err", err)
 				} else {
-					log.Info("upstream closed; tearing down downstream", "reason", disconnectReason(err))
+					log.Info("upstream closed; tearing down downstream", "reason", reasonFor(ctx, err))
 					log.Debug("upstream disconnect detail", "err", err)
 				}
 				return
@@ -131,9 +157,10 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 					// Tighten liveness to the CSMS-supplied heartbeat interval carried in
 					// the BootNotification.conf (FR-25).
 					if f.Type == ocpp.CALLRESULT {
-						bootMu.Lock()
+						corrMu.Lock()
 						isBoot := f.UniqueID != "" && f.UniqueID == bootUID
-						bootMu.Unlock()
+						isStartConf := f.UniqueID != "" && f.UniqueID == startTxnUID
+						corrMu.Unlock()
 						if isBoot {
 							var conf ocpp.BootNotificationConf
 							if json.Unmarshal(f.Payload, &conf) == nil && conf.Interval > 0 {
@@ -141,6 +168,12 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 								downstreamWD.setInterval(d)
 								upstreamWD.setInterval(d)
 								log.Info("liveness tightened to CSMS heartbeat interval", "intervalSeconds", conf.Interval)
+							}
+						}
+						if isStartConf {
+							var conf ocpp.StartTransactionConf
+							if json.Unmarshal(f.Payload, &conf) == nil {
+								log.Info("CSMS assigned transaction", "transactionId", conf.TransactionID, "idTagStatus", conf.IdTagInfo.Status)
 							}
 						}
 					}

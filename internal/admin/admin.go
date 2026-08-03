@@ -53,6 +53,7 @@ func New(m *manager.Manager, log *slog.Logger) *Handler {
 	mux.HandleFunc("/admin/login", h.login)
 	mux.HandleFunc("/admin/logout", h.logout)
 	mux.HandleFunc("/admin/proxied", h.requireAuth(h.setProxied))
+	mux.HandleFunc("/admin/mode", h.requireAuth(h.setMode))
 	mux.HandleFunc("/admin/chargepoints", h.requireAuth(h.chargepoints))
 	mux.HandleFunc("/admin/schedules", h.requireAuth(h.schedules))
 	mux.HandleFunc("/admin/remote", h.requireAuth(h.remote))

@@ -131,6 +131,17 @@ func TestProxyRelayAndBootAnonymisation(t *testing.T) {
 	}
 	defer easee.CloseNow()
 
+	// On connect the proxy asks the charger for a BootNotification (FR-44).
+	trig := readFrame(t, easee)
+	if trig.Type != ocpp.CALL || trig.Action != "TriggerMessage" {
+		t.Fatalf("expected a TriggerMessage from the proxy, got %v/%s", trig.Type, trig.Action)
+	}
+	// The charger's reply to that trigger must be swallowed, NOT relayed to the CSMS.
+	trigConf, _ := ocpp.Result(trig.UniqueID, struct{}{})
+	if err := easee.Write(ctx, websocket.MessageText, trigConf); err != nil {
+		t.Fatal(err)
+	}
+
 	// Easee sends BootNotification with its real vendor.
 	boot, _ := ocpp.Call("42", "BootNotification", ocpp.BootNotificationReq{
 		ChargePointVendor: "Easee ASA", ChargePointModel: "Easee One", ChargePointSerialNumber: "UKGUAY4Y",

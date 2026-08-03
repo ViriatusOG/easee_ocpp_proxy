@@ -52,6 +52,7 @@ func (m *Manager) RemoveChargepoint(id string) error {
 	}
 	delete(m.cfg.Aliases, id)
 	delete(m.cfg.DeviceSchedules, id)
+	delete(m.cfg.SchedulePaused, id)
 	err := m.cfg.Save()
 	m.mu.Unlock()
 
@@ -143,8 +144,44 @@ func (m *Manager) AssignSchedule(id, name string) error {
 		delete(m.cfg.DeviceSchedules, id)
 	} else {
 		m.cfg.DeviceSchedules[id] = name
+		// Assigning a schedule enforces it (clears any always-on pause) so the CP
+		// starts in "scheduled" mode; the user can flip it to always-on afterwards.
+		delete(m.cfg.SchedulePaused, id)
 	}
 	return m.cfg.Save()
+}
+
+// SetLocalMode switches a chargepoint to a local mode: scheduled (enforce its assigned
+// schedule) or always-on (pause it). It clears any proxied role first, dropping that
+// session so the CP reconnects locally (FR-43).
+func (m *Manager) SetLocalMode(id string, scheduled bool) error {
+	m.mu.Lock()
+	if !m.cfg.HasChargepoint(id) {
+		m.mu.Unlock()
+		return fmt.Errorf("chargepoint %q not found", id)
+	}
+	wasProxied := m.cfg.ProxiedID == id
+	if wasProxied {
+		m.cfg.ProxiedID = ""
+	}
+	if m.cfg.SchedulePaused == nil {
+		m.cfg.SchedulePaused = map[string]bool{}
+	}
+	if scheduled {
+		delete(m.cfg.SchedulePaused, id) // enforce the schedule
+	} else {
+		m.cfg.SchedulePaused[id] = true // always-on
+	}
+	err := m.cfg.Save()
+	m.mu.Unlock()
+
+	if err != nil {
+		return err
+	}
+	if wasProxied {
+		m.DropSession(id) // reconnect as a local CP
+	}
+	return nil
 }
 
 // SetTimezone sets the IANA timezone for schedule evaluation ("" = server local) (FR-41).

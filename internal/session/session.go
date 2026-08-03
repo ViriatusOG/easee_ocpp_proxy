@@ -40,6 +40,16 @@ func disconnectReason(err error) string {
 	}
 }
 
+// reasonFor classifies a read error, but treats any error seen after our own context
+// was cancelled (mode switch, liveness teardown, shutdown) as a deliberate end rather
+// than an abrupt device disconnect.
+func reasonFor(ctx context.Context, err error) string {
+	if ctx.Err() != nil {
+		return "session ended"
+	}
+	return disconnectReason(err)
+}
+
 // scheduleTick is how often the background reconciler re-evaluates a CP's window.
 const scheduleTick = 15 * time.Second
 
@@ -101,7 +111,7 @@ func runLocal(ctx context.Context, c *websocket.Conn, id string, m *manager.Mana
 	for {
 		typ, data, err := c.Read(ctx)
 		if err != nil {
-			log.Info("chargepoint disconnected", "reason", disconnectReason(err))
+			log.Info("chargepoint disconnected", "reason", reasonFor(ctx, err))
 			log.Debug("disconnect detail", "err", err)
 			return
 		}

@@ -27,6 +27,8 @@ schedules:
     stop: "05:30"
 device_schedules:       # CP ID → schedule name; unlisted CPs charge any time
   K9PZQ4RT: overnight
+schedule_paused:        # CP IDs whose assigned schedule is paused = "always on" (FR-43)
+  # K9PZQ4RT: true       # keep the schedule assigned but ignore it (charge any time)
 
 # Upstream CSMS — used only when a CP is proxied (D-3/D-7/D-8).
 remote:

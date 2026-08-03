@@ -97,3 +97,11 @@ type RemoteStartTransactionReq struct {
 type RemoteStopTransactionReq struct {
 	TransactionID int `json:"transactionId"`
 }
+
+// TriggerMessageReq asks a chargepoint to send a specific message. The proxy uses it
+// to request a BootNotification on upstream connect so the CSMS provisions the
+// connection even when the charger only reconnected (didn't reboot) (FR-44).
+type TriggerMessageReq struct {
+	RequestedMessage string `json:"requestedMessage"`
+	ConnectorID      int    `json:"connectorId,omitempty"`
+}

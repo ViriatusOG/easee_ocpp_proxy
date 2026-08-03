@@ -19,12 +19,24 @@ func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
 		st, _ := h.m.State().Get(id)
 		row := makeRow(id, id == cfg.ProxiedID, st, now)
 		row.Name = cfg.DisplayName(id)
-		if sname := cfg.DeviceSchedules[id]; sname != "" {
-			row.Schedule = sname
-			if h.m.AllowedNow(id) {
-				row.WindowState = "open"
-			} else {
-				row.WindowState = "closed"
+		row.HasSchedule = cfg.HasSchedule(id)
+		switch {
+		case id == cfg.ProxiedID:
+			row.Mode = "proxied"
+		case cfg.ScheduleActive(id):
+			row.Mode = "scheduled"
+		default:
+			row.Mode = "always_on"
+		}
+		if row.Mode != "proxied" && row.HasSchedule {
+			row.Schedule = cfg.DeviceSchedules[id]
+			switch {
+			case row.Mode == "always_on":
+				row.ScheduleState = "paused"
+			case h.m.AllowedNow(id):
+				row.ScheduleState = "open"
+			default:
+				row.ScheduleState = "closed"
 			}
 		}
 		rows = append(rows, row)
@@ -63,6 +75,36 @@ func (h *Handler) setProxied(w http.ResponseWriter, r *http.Request) {
 		h.log.Info("proxied chargepoint changed", "cp", id)
 		redirectMsg(w, r, "/admin", "Now remotely managing "+id+".")
 	}
+}
+
+// setMode handles the dashboard role selector: proxied / always-on / scheduled (FR-43).
+func (h *Handler) setMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	id := r.FormValue("id")
+	cfg := h.m.ConfigSnapshot()
+	name := cfg.DisplayName(id)
+	var err error
+	var msg string
+	switch r.FormValue("mode") {
+	case "proxied":
+		err, msg = h.m.SetProxiedID(id), "Now remotely managing "+name+"."
+	case "always_on":
+		err, msg = h.m.SetLocalMode(id, false), name+" is now always-on (local)."
+	case "scheduled":
+		err, msg = h.m.SetLocalMode(id, true), name+" now follows its schedule."
+	default:
+		http.Error(w, "unknown mode", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		redirectMsg(w, r, "/admin", "error: "+err.Error())
+		return
+	}
+	h.log.Info("chargepoint mode changed", "cp", id, "mode", r.FormValue("mode"))
+	redirectMsg(w, r, "/admin", msg)
 }
 
 // chargepoints lists, adds and removes allow-listed CP IDs (rare task, FR-29a).

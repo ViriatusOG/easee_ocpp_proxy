@@ -65,6 +65,8 @@ const baseTmpl = `{{define "base"}}<!doctype html>
   button { padding: .45rem .9rem; border: 0; border-radius: .3rem; background: #2563eb; color: #fff; cursor: pointer; }
   button.danger { background: #dc2626; }
   .radios label { display: flex; align-items: center; gap: .4rem; margin: .3rem 0; }
+  label.checkbox { display: flex; align-items: center; gap: .4rem; font-size: 1rem; }
+  label.checkbox input { width: auto; }
   .muted { color: #64748b; font-size: .85rem; }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   select, input[type=text], input[type=password], input[type=url] { font-size: 16px; } /* avoid iOS zoom-on-focus */
@@ -318,6 +320,12 @@ const remoteContent = `{{define "content"}}
   <input id="firmware" name="firmware" type="text" value="{{.Boot.FirmwareVersion}}">
   <label for="serial">Serial number <span class="muted">(blank = pass through real value)</span></label>
   <input id="serial" name="serial" type="text" value="{{.Boot.SerialNumber}}">
+
+  <hr>
+  <strong>Provisioning</strong>
+  <p class="muted">Applies on the next upstream connect; the current session is not interrupted.</p>
+  <label class="checkbox"><input name="force_boot" type="checkbox" value="1"{{if .ForceBoot}} checked{{end}}> Request a BootNotification on every upstream connect</label>
+  <p class="muted">Makes the CSMS re-provision the charger on connect/switchover (fixes "session open, 0&nbsp;kWh"). Once the CSMS has configured the charger this is redundant and can be turned off.</p>
 
   <p><button type="submit">Save</button></p>
 </form>

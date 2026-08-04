@@ -252,6 +252,16 @@ func (m *Manager) SetBootAnonymise(b config.BootAnonymise) error {
 	return m.cfg.Save()
 }
 
+// SetProxyForceBoot toggles the forced BootNotification on upstream connect (FR-44a).
+// The change is persisted and takes effect on the next upstream connect; the current
+// proxied session (if any) is left running so charging is never interrupted.
+func (m *Manager) SetProxyForceBoot(v bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.ProxyForceBoot = v
+	return m.cfg.Save()
+}
+
 // GenerateAPIToken creates a new random API token, persists it, and returns it (FR-45).
 func (m *Manager) GenerateAPIToken() (string, error) {
 	b := make([]byte, 24)

@@ -256,7 +256,13 @@ func (h *Handler) remote(w http.ResponseWriter, r *http.Request) {
 			redirectMsg(w, r, "/admin/remote", "error: "+err.Error())
 			return
 		}
-		h.log.Info("remote configuration updated")
+		// Unchecked checkboxes submit nothing, so absence means "off".
+		forceBoot := r.FormValue("force_boot") != ""
+		if err := h.m.SetProxyForceBoot(forceBoot); err != nil {
+			redirectMsg(w, r, "/admin/remote", "error: "+err.Error())
+			return
+		}
+		h.log.Info("remote configuration updated", "force_boot", forceBoot)
 		redirectMsg(w, r, "/admin/remote", "Remote configuration saved.")
 		return
 	}
@@ -268,6 +274,7 @@ func (h *Handler) remote(w http.ResponseWriter, r *http.Request) {
 		"User":         user,
 		"Remote":       cfg.Remote,
 		"Boot":         cfg.BootAnonymise,
+		"ForceBoot":    cfg.ProxyForceBoot,
 		"PasswordSet":  cfg.Remote.PasswordEnc != "",
 		"Flash":        r.URL.Query().Get("msg"),
 	})

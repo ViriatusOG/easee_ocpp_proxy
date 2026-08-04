@@ -71,6 +71,7 @@ type Config struct {
 	SchedulePaused     map[string]bool   `yaml:"schedule_paused"`  // CP IDs whose assigned schedule is paused (always-on) (FR-43)
 	Remote             Remote            `yaml:"remote"`
 	BootAnonymise      BootAnonymise     `yaml:"boot_anonymise"`
+	ProxyForceBoot     bool              `yaml:"proxy_force_boot"` // trigger a BootNotification on every upstream connect (FR-44); once the CSMS has provisioned the CP this is redundant and can be disabled
 	LocalAutoStart     LocalAutoStart    `yaml:"local_auto_start"`
 	Admin              Admin             `yaml:"admin"`
 	APIToken           string            `yaml:"api_token"` // bearer token for the JSON API (empty = API disabled) (FR-45)
@@ -85,6 +86,7 @@ func Default() Config {
 		ListenAddr:         ":9000",
 		HeartbeatIntervalS: 300,
 		UpstreamTimeoutS:   30,
+		ProxyForceBoot:     true, // preserve FR-44 behaviour unless explicitly disabled
 		LocalAutoStart:     LocalAutoStart{Enabled: true, IDTag: "PROXY"},
 	}
 }

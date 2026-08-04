@@ -139,6 +139,8 @@ also editable from the admin UI, which writes changes back atomically. Highlight
 - `proxied_id` — which single charger (if any) is proxied.
 - `remote` — the upstream CSMS URL, upstream ID, credentials.
 - `boot_anonymise` — the vendor/model/etc. presented upstream.
+- `proxy_force_boot` — trigger a `BootNotification` on every upstream connect so the CSMS
+  re-provisions (default `true`); disable once the CSMS has configured the charger.
 - `schedules` / `device_schedules` / `timezone` — charging windows.
 - `local_auto_start` — auto-start behaviour for local chargers.
 - `api_token` — enables the JSON API (manage it from Admin → Account).

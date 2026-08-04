@@ -189,6 +189,53 @@ func TestProxyRelayAndBootAnonymisation(t *testing.T) {
 	}
 }
 
+// With proxy_force_boot disabled the proxy must NOT synthesise a TriggerMessage on
+// connect; the charger's own first frame is relayed straight through instead.
+func TestProxyForceBootDisabled(t *testing.T) {
+	csms := newMockCSMS(t)
+	orig := upstreamDialer
+	upstreamDialer = func(ctx context.Context, r config.Remote) (*websocket.Conn, *http.Response, error) {
+		return websocket.Dial(ctx, ws(csms.srv.URL), &websocket.DialOptions{Subprotocols: []string{ocpp.Subprotocol}})
+	}
+	defer func() { upstreamDialer = orig }()
+
+	c := config.Default()
+	c.Chargepoints = []string{"P1"}
+	c.ProxiedID = "P1"
+	c.ProxyForceBoot = false
+	c.Remote = config.Remote{URL: "wss://dummy", UpstreamID: "up-1"}
+	m := manager.New(&c)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dc, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{ocpp.Subprotocol}})
+		if err != nil {
+			return
+		}
+		Serve(r.Context(), dc, "P1", manager.RoleProxied, m, clock.Real(), logger)
+	}))
+	defer proxy.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	easee, _, err := websocket.Dial(ctx, ws(proxy.URL), &websocket.DialOptions{Subprotocols: []string{ocpp.Subprotocol}})
+	if err != nil {
+		t.Fatalf("easee dial: %v", err)
+	}
+	defer easee.CloseNow()
+
+	// No TriggerMessage should arrive. The charger sends a Heartbeat; it must be the
+	// first thing the CSMS sees (proving nothing was injected ahead of it).
+	hb, _ := ocpp.Call("77", "Heartbeat", struct{}{})
+	if err := easee.Write(ctx, websocket.MessageText, hb); err != nil {
+		t.Fatal(err)
+	}
+	up := recvFrame(t, csms.received)
+	if up.Action != "Heartbeat" || up.UniqueID != "77" {
+		t.Fatalf("CSMS got %v/%s, want Heartbeat/77 (no injected TriggerMessage)", up.Action, up.UniqueID)
+	}
+}
+
 func TestProxyDownstreamCloseTearsDownUpstream(t *testing.T) {
 	csms := newMockCSMS(t)
 	orig := upstreamDialer

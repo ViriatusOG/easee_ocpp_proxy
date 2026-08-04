@@ -305,6 +305,11 @@ OCPP 1.6 CALLs. At minimum:
   unprovisioned and mis-accounts the session (observed: a "session open, 0 kWh" charge).
   A charger that genuinely rebooted may send two BootNotifications (its own plus the
   triggered one); this is harmless (the CSMS re-provisions).
+- **FR-44a** The forced boot (FR-44) SHALL be configurable (`proxy_force_boot`, default
+  on). Once the CSMS has pushed its configuration to a charger the re-boot on every
+  connect is redundant, and some CSMSs prefer a stable long-lived session; operators MAY
+  disable it. When disabled, the proxy injects nothing on connect and relays the charger's
+  own frames verbatim.
 
 ### 5.5 Connection lifecycle & liveness
 

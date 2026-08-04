@@ -81,13 +81,20 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 	// configuration — even on a mode-switch reconnect that wouldn't otherwise reboot
 	// the charger. Sent before the relay goroutines start, so this is a safe single
 	// write; the resulting BootNotification flows up through the normal anonymise path.
-	triggerUID := m.NextMessageID()
-	if trigger, terr := ocpp.Call(triggerUID, "TriggerMessage", ocpp.TriggerMessageReq{RequestedMessage: "BootNotification"}); terr == nil {
-		if werr := downstream.Write(ctx, websocket.MessageText, trigger); werr != nil {
-			log.Warn("failed to send BootNotification trigger", "err", werr)
-		} else {
-			log.Info("requested BootNotification from charger (provisioning trigger)")
+	// Optional (proxy_force_boot): once the CSMS has pushed its configuration to the
+	// charger the re-boot is redundant, so it can be disabled to avoid churning it.
+	var triggerUID string
+	if cfg.ProxyForceBoot {
+		triggerUID = m.NextMessageID()
+		if trigger, terr := ocpp.Call(triggerUID, "TriggerMessage", ocpp.TriggerMessageReq{RequestedMessage: "BootNotification"}); terr == nil {
+			if werr := downstream.Write(ctx, websocket.MessageText, trigger); werr != nil {
+				log.Warn("failed to send BootNotification trigger", "err", werr)
+			} else {
+				log.Info("requested BootNotification from charger (provisioning trigger)")
+			}
 		}
+	} else {
+		log.Debug("proxy_force_boot disabled; not requesting BootNotification on connect")
 	}
 
 	// downstream → upstream (anonymise BootNotification, observe telemetry)
@@ -106,7 +113,7 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 				if f, perr := ocpp.Parse(data); perr == nil {
 					// The charger's reply to our own TriggerMessage must not be relayed
 					// upstream — the CSMS never sent that request (FR-44).
-					if (f.Type == ocpp.CALLRESULT || f.Type == ocpp.CALLERROR) && f.UniqueID == triggerUID {
+					if triggerUID != "" && (f.Type == ocpp.CALLRESULT || f.Type == ocpp.CALLERROR) && f.UniqueID == triggerUID {
 						log.Debug("swallowed charger reply to proxy TriggerMessage", "uid", f.UniqueID)
 						continue
 					}

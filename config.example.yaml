@@ -37,6 +37,12 @@ remote:
   username: ""                                # optional; defaults to upstream_id (OCPP Basic auth)
   password_enc: ""                            # authorization key; set via the admin UI (FR-35)
 
+# Force a BootNotification to the CSMS on every upstream connect / mode-switch (FR-44),
+# so it re-provisions the charger. Needed the first time a charger is handed to the CSMS
+# (fixes "session open, 0 kWh" accounting). Once the CSMS has pushed its configuration to
+# the charger this re-boot is redundant — set false to stop churning it on each connect.
+proxy_force_boot: true
+
 # Local auto-start: send RemoteStartTransaction when an auto-authorised chargepoint
 # reports a connector "Preparing" but waits for backend authorisation (D-11). Needed
 # for chargers (e.g. Wallbox) that don't self-start when online. Disable for chargers

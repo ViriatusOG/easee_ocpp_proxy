@@ -262,6 +262,25 @@ func (m *Manager) SetProxyForceBoot(v bool) error {
 	return m.cfg.Save()
 }
 
+// SetProxyNormaliseMeter toggles virtual-meter normalisation (FR-47). Turning it on
+// re-pegs the virtual meter to the next real reading (so it starts clean from the
+// currently-proxied unit rather than a stale high-water mark). Applies on the next
+// meter reading; the current session is not interrupted.
+func (m *Manager) SetProxyNormaliseMeter(v bool) error {
+	m.mu.Lock()
+	was := m.cfg.ProxyNormaliseMeter
+	m.cfg.ProxyNormaliseMeter = v
+	err := m.cfg.Save()
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if v && !was {
+		m.ResetVirtualMeter()
+	}
+	return nil
+}
+
 // GenerateAPIToken creates a new random API token, persists it, and returns it (FR-45).
 func (m *Manager) GenerateAPIToken() (string, error) {
 	b := make([]byte, 24)

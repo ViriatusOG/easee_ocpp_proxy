@@ -11,6 +11,9 @@
 *.tmp
 .easee-proxy-*.yaml.tmp
 
+# Virtual-meter high-water state (runtime, per-install)
+.easee-proxy-meter.json
+
 # Packet captures (may contain real identifiers)
 *.pcap
 *.pcapng

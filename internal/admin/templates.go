@@ -327,6 +327,12 @@ const remoteContent = `{{define "content"}}
   <label class="checkbox"><input name="force_boot" type="checkbox" value="1"{{if .ForceBoot}} checked{{end}}> Request a BootNotification on every upstream connect</label>
   <p class="muted">Makes the CSMS re-provision the charger on connect/switchover (fixes "session open, 0&nbsp;kWh"). Once the CSMS has configured the charger this is redundant and can be turned off.</p>
 
+  <hr>
+  <strong>Metering (multi-unit)</strong>
+  <p class="muted">Only relevant when you rotate more than one physical charger through this one remote identity.</p>
+  <label class="checkbox"><input name="normalise_meter" type="checkbox" value="1"{{if .NormaliseMeter}} checked{{end}}> Present one continuous meter to the CSMS</label>
+  <p class="muted">Each physical charger has its own lifetime meter, so switching units makes the CSMS see the reading jump — a backwards jump can break its session history. This rewrites the register sent upstream onto a single, never-decreasing virtual meter. Per-session energy is unchanged. Enable it while the highest-reading unit is proxied, then leave it on.</p>
+
   <p><button type="submit">Save</button></p>
 </form>
 {{end}}`

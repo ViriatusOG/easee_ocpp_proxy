@@ -218,12 +218,12 @@ func (h *Handler) schedules(w http.ResponseWriter, r *http.Request) {
 	cfg := h.m.ConfigSnapshot()
 	now := time.Now().In(cfg.Location())
 	h.render(w, "schedules", map[string]any{
-		"Title":       "Schedules",
-		"User":        user,
-		"Schedules":   cfg.Schedules,
-		"Timezone":    cfg.Timezone,
-		"LocalTime":   now.Format("Mon 15:04 MST"),
-		"Flash":       r.URL.Query().Get("msg"),
+		"Title":     "Schedules",
+		"User":      user,
+		"Schedules": cfg.Schedules,
+		"Timezone":  cfg.Timezone,
+		"LocalTime": now.Format("Mon 15:04 MST"),
+		"Flash":     r.URL.Query().Get("msg"),
 	})
 }
 
@@ -262,7 +262,12 @@ func (h *Handler) remote(w http.ResponseWriter, r *http.Request) {
 			redirectMsg(w, r, "/admin/remote", "error: "+err.Error())
 			return
 		}
-		h.log.Info("remote configuration updated", "force_boot", forceBoot)
+		normaliseMeter := r.FormValue("normalise_meter") != ""
+		if err := h.m.SetProxyNormaliseMeter(normaliseMeter); err != nil {
+			redirectMsg(w, r, "/admin/remote", "error: "+err.Error())
+			return
+		}
+		h.log.Info("remote configuration updated", "force_boot", forceBoot, "normalise_meter", normaliseMeter)
 		redirectMsg(w, r, "/admin/remote", "Remote configuration saved.")
 		return
 	}
@@ -270,13 +275,14 @@ func (h *Handler) remote(w http.ResponseWriter, r *http.Request) {
 	user, _ := h.currentUser(r)
 	cfg := h.m.ConfigSnapshot()
 	h.render(w, "remote", map[string]any{
-		"Title":        "Remote server",
-		"User":         user,
-		"Remote":       cfg.Remote,
-		"Boot":         cfg.BootAnonymise,
-		"ForceBoot":    cfg.ProxyForceBoot,
-		"PasswordSet":  cfg.Remote.PasswordEnc != "",
-		"Flash":        r.URL.Query().Get("msg"),
+		"Title":          "Remote server",
+		"User":           user,
+		"Remote":         cfg.Remote,
+		"Boot":           cfg.BootAnonymise,
+		"ForceBoot":      cfg.ProxyForceBoot,
+		"NormaliseMeter": cfg.ProxyNormaliseMeter,
+		"PasswordSet":    cfg.Remote.PasswordEnc != "",
+		"Flash":          r.URL.Query().Get("msg"),
 	})
 }
 

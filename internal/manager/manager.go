@@ -39,15 +39,24 @@ type Manager struct {
 	txn      atomic.Int64
 	msgID    atomic.Int64
 	sessions map[string]*SessionHandle
+
+	// Virtual-meter high-water mark for proxy_normalise_meter (FR-47), persisted to a
+	// sidecar file so it survives restarts. Guarded by its own mutex.
+	meterMu   sync.Mutex
+	virtualWh float64
+	meterInit bool
+	meterPath string
 }
 
 // New creates a Manager over the given config.
 func New(cfg *config.Config) *Manager {
-	return &Manager{
+	m := &Manager{
 		cfg:      cfg,
 		states:   state.NewStore(),
 		sessions: make(map[string]*SessionHandle),
 	}
+	m.initMeter()
+	return m
 }
 
 // State returns the live per-chargepoint state store.

@@ -141,6 +141,9 @@ also editable from the admin UI, which writes changes back atomically. Highlight
 - `boot_anonymise` — the vendor/model/etc. presented upstream.
 - `proxy_force_boot` — trigger a `BootNotification` on every upstream connect so the CSMS
   re-provisions (default `true`); disable once the CSMS has configured the charger.
+- `proxy_normalise_meter` — when rotating multiple chargers through one remote identity,
+  present the CSMS a single monotonic meter so its lifetime register never jumps/rolls
+  back on a unit switch (default `false`; per-session energy is unchanged).
 - `schedules` / `device_schedules` / `timezone` — charging windows.
 - `local_auto_start` — auto-start behaviour for local chargers.
 - `api_token` — enables the JSON API (manage it from Admin → Account).

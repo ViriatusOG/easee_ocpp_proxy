@@ -76,6 +76,10 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 	var corrMu sync.Mutex
 	var bootUID, startTxnUID string
 
+	// Optional virtual-meter normalisation so the CSMS sees one monotonic meter across
+	// proxied-unit switches (proxy_normalise_meter, FR-47).
+	norm := newMeterNormaliser(m, log)
+
 	// Force a provisioning cycle (FR-44): ask the charger to (re)send its
 	// BootNotification so the CSMS registers this connection and runs its post-boot
 	// configuration — even on a mode-switch reconnect that wouldn't otherwise reboot
@@ -129,6 +133,15 @@ func runProxy(ctx context.Context, downstream *websocket.Conn, id string, m *man
 						corrMu.Lock()
 						startTxnUID = f.UniqueID
 						corrMu.Unlock()
+					}
+					// Map the absolute energy register onto the virtual meter (FR-47).
+					// Runs after observeProxyFrame, which reads the real values for the
+					// dashboard; only the upstream copy is rewritten.
+					if cfg.ProxyNormaliseMeter && f.Type == ocpp.CALL {
+						switch f.Action {
+						case "StartTransaction", "StopTransaction", "MeterValues":
+							out = norm.rewrite(f)
+						}
 					}
 				}
 			}

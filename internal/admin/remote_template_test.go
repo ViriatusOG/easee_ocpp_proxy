@@ -18,23 +18,28 @@ func TestRemoteTemplateForceBootCheckbox(t *testing.T) {
 	}{{true, true}, {false, false}} {
 		var buf bytes.Buffer
 		data := map[string]any{
-			"Title":       "Remote server",
-			"User":        "admin",
-			"Remote":      config.Remote{},
-			"Boot":        config.BootAnonymise{},
-			"ForceBoot":   tc.on,
-			"PasswordSet": false,
+			"Title":          "Remote server",
+			"User":           "admin",
+			"Remote":         config.Remote{},
+			"Boot":           config.BootAnonymise{},
+			"ForceBoot":      tc.on,
+			"NormaliseMeter": tc.on,
+			"PasswordSet":    false,
 		}
 		if err := tmpl.ExecuteTemplate(&buf, "base", data); err != nil {
 			t.Fatalf("render remote (force=%v): %v", tc.on, err)
 		}
 		html := buf.String()
-		if !strings.Contains(html, `name="force_boot"`) {
-			t.Fatalf("force_boot checkbox missing from remote page")
+		if !strings.Contains(html, `name="force_boot"`) || !strings.Contains(html, `name="normalise_meter"`) {
+			t.Fatalf("expected checkboxes missing from remote page")
 		}
 		checked := strings.Contains(html, `name="force_boot" type="checkbox" value="1" checked`)
 		if checked != tc.wantChecked {
 			t.Errorf("ForceBoot=%v: checkbox checked=%v, want %v", tc.on, checked, tc.wantChecked)
+		}
+		normChecked := strings.Contains(html, `name="normalise_meter" type="checkbox" value="1" checked`)
+		if normChecked != tc.wantChecked {
+			t.Errorf("NormaliseMeter=%v: checkbox checked=%v, want %v", tc.on, normChecked, tc.wantChecked)
 		}
 	}
 }

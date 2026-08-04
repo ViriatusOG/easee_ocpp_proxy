@@ -310,6 +310,24 @@ OCPP 1.6 CALLs. At minimum:
   connect is redundant, and some CSMSs prefer a stable long-lived session; operators MAY
   disable it. When disabled, the proxy injects nothing on connect and relays the charger's
   own frames verbatim.
+- **FR-47** When more than one physical charger is rotated through a single upstream
+  identity, the proxy MAY present the CSMS **one monotonic virtual meter**
+  (`proxy_normalise_meter`, default off). Each physical unit has its own lifetime
+  `Energy.Active.Import.Register`, so a switch makes the CSMS see the absolute meter step —
+  and a *backwards* step reads to a CSMS as a meter rollback, which can invalidate or hide
+  session history (observed: a completed, CSMS-accepted charge vanished from history after
+  a switch to a lower-metered unit). When enabled, the absolute register in the
+  upstream-bound `meterStart`, `meterStop` and `MeterValues` (Energy.Active.Import.Register)
+  is remapped as `presented = real + offset`, where `offset` is fixed for the lifetime of
+  one upstream connection at `V − r_first` (V = a persisted high-water mark, bootstrapped
+  to the first real reading). The virtual meter therefore only ever climbs and never rolls
+  back across a switch. Because `meterStart` and `meterStop` share the offset it cancels in
+  `meterStop − meterStart`, so per-session energy — and thus billing — is unchanged; only
+  the absolute baseline shifts. The high-water mark persists in a sidecar file so it
+  survives restarts; enabling normalisation re-pegs it to the currently-proxied unit. This
+  does not address the CSMS reusing `transactionId` across switches (a separate CSMS-side
+  effect of the reboot/reconnect churn); FR-44a (leaving the forced boot off) is the lever
+  for that.
 
 ### 5.5 Connection lifecycle & liveness
 

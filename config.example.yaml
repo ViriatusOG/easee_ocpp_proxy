@@ -43,6 +43,16 @@ remote:
 # the charger this re-boot is redundant — set false to stop churning it on each connect.
 proxy_force_boot: true
 
+# Present the CSMS one continuous, monotonic meter across proxied-unit switches (FR-47).
+# Only relevant when more than one physical charger is rotated through a single remote
+# identity: each unit has its own lifetime meter, so switching makes the CSMS see the
+# register jump — a backwards jump can break its session history. When enabled, the
+# absolute energy register sent upstream (meterStart/meterStop and MeterValues) is mapped
+# onto one never-decreasing virtual meter; per-session energy (meterStop-meterStart) is
+# unchanged. Default off. Enable it while the highest-reading unit is proxied, then leave
+# it on. The high-water mark persists in a sidecar file (.easee-proxy-meter.json).
+proxy_normalise_meter: false
+
 # Local auto-start: send RemoteStartTransaction when an auto-authorised chargepoint
 # reports a connector "Preparing" but waits for backend authorisation (D-11). Needed
 # for chargers (e.g. Wallbox) that don't self-start when online. Disable for chargers

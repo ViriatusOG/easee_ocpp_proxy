@@ -153,7 +153,11 @@ func (h *localCSMS) handleStatus(f *ocpp.Frame) ([][]byte, error) {
 		return [][]byte{conf}, nil
 	}
 	h.m.State().Update(h.id, func(cp *state.CP) { cp.RemoteStartSent = true })
-	h.log.Info("auto-start: sending RemoteStartTransaction", "connector", req.ConnectorID, "idTag", idTag, "uid", uid)
+	if h.m.IsSynchronised(h.id) {
+		h.log.Info("synchronised: proxied unit charging — starting charge", "connector", req.ConnectorID, "idTag", idTag, "uid", uid)
+	} else {
+		h.log.Info("auto-start: sending RemoteStartTransaction", "connector", req.ConnectorID, "idTag", idTag, "uid", uid)
+	}
 	return [][]byte{conf, call}, nil
 }
 

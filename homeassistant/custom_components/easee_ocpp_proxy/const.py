@@ -12,5 +12,6 @@ MODE_LABELS = {
     "proxied": "Proxied",
     "always_on": "Always on",
     "scheduled": "Scheduled",
+    "synchronised": "Synchronised",
 }
 LABEL_MODES = {label: mode for mode, label in MODE_LABELS.items()}

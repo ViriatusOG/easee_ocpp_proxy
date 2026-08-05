@@ -130,6 +130,7 @@ const dashboardContent = `{{define "content"}}
             <option value="proxied" {{if eq .Mode "proxied"}}selected{{end}}>proxied</option>
             <option value="always_on" {{if eq .Mode "always_on"}}selected{{end}}>always on</option>
             {{if .HasSchedule}}<option value="scheduled" {{if eq .Mode "scheduled"}}selected{{end}}>scheduled</option>{{end}}
+            {{if or .CanSync (eq .Mode "synchronised")}}<option value="synchronised" {{if eq .Mode "synchronised"}}selected{{end}}>synchronised</option>{{end}}
           </select>
         </form>
       </td>
@@ -155,7 +156,7 @@ const dashboardContent = `{{define "content"}}
 </table>
 </div>
 
-<p class="muted" style="margin-top:1rem">Tip: use a chargepoint's <strong>role</strong> selector to switch between <em>proxied</em> (remotely managed), <em>always on</em>, and <em>scheduled</em> (only when a schedule is assigned). Only one chargepoint can be proxied; switching to proxied reconnects it.</p>
+<p class="muted" style="margin-top:1rem">Tip: use a chargepoint's <strong>role</strong> selector to switch between <em>proxied</em> (remotely managed), <em>always on</em>, <em>scheduled</em> (only when a schedule is assigned), and <em>synchronised</em> (only when another chargepoint is proxied — mirrors its charging windows locally). Only one chargepoint can be proxied; switching to proxied reconnects it.</p>
 
 <script>
 (function () {

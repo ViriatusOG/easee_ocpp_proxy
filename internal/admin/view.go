@@ -28,8 +28,9 @@ type cpRow struct {
 	Power         string
 	LastHeartbeat string
 	LastMessage   string
-	Mode          string // "proxied" | "scheduled" | "always_on" (FR-43)
+	Mode          string // "proxied" | "scheduled" | "always_on" | "synchronised" (FR-43/FR-48)
 	HasSchedule   bool   // a schedule is assigned (offer the "scheduled" option)
+	CanSync       bool   // another CP is proxied and this one isn't (offer "synchronised") (FR-48)
 	Schedule      string // assigned schedule name, or ""
 	ScheduleState string // "open" | "closed" | "paused" | "" (n/a)
 }

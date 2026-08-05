@@ -162,13 +162,21 @@ func (h *localCSMS) shouldAutoStart(req ocpp.StatusNotificationReq) bool {
 	if req.Status != "Preparing" || req.ConnectorID == 0 {
 		return false
 	}
-	if !h.m.Config().LocalAutoStart.Enabled {
-		return false
-	}
-	// Respect the charging schedule: outside the window, wait for the reconciler to
-	// start when the window opens (FR-41).
-	if !h.m.AllowedAt(h.id, h.clk.Now()) {
-		return false
+	// Synchronised CPs mirror the proxied unit: start immediately if it's charging,
+	// regardless of the local auto-start toggle or any schedule (FR-48).
+	if h.m.IsSynchronised(h.id) {
+		if !h.m.ProxiedCharging() {
+			return false
+		}
+	} else {
+		if !h.m.Config().LocalAutoStart.Enabled {
+			return false
+		}
+		// Respect the charging schedule: outside the window, wait for the reconciler to
+		// start when the window opens (FR-41).
+		if !h.m.AllowedAt(h.id, h.clk.Now()) {
+			return false
+		}
 	}
 	st, _ := h.m.State().Get(h.id)
 	return !st.TxnActive && !st.RemoteStartSent
@@ -209,7 +217,16 @@ func (h *localCSMS) reconcileSchedule(send func([]byte) error) {
 	if !ok || !st.DownstreamUp {
 		return
 	}
-	action := decideSchedule(h.m.AllowedNow(h.id), st.ConnectorStatus, st.TxnActive, h.m.Config().LocalAutoStart.Enabled)
+	// Synchronised CPs mirror the proxied unit's charging state, ignoring their own
+	// schedule and the local auto-start toggle (FR-48); everyone else follows their
+	// schedule window.
+	allowed := h.m.AllowedNow(h.id)
+	autoStart := h.m.Config().LocalAutoStart.Enabled
+	if h.m.IsSynchronised(h.id) {
+		allowed = h.m.ProxiedCharging()
+		autoStart = true
+	}
+	action := decideSchedule(allowed, st.ConnectorStatus, st.TxnActive, autoStart)
 	if action == schedNone {
 		return
 	}
@@ -218,6 +235,7 @@ func (h *localCSMS) reconcileSchedule(send func([]byte) error) {
 		return
 	}
 
+	sync := h.m.IsSynchronised(h.id)
 	uid := h.m.NextMessageID()
 	var call []byte
 	var err error
@@ -230,10 +248,18 @@ func (h *localCSMS) reconcileSchedule(send func([]byte) error) {
 		call, err = ocpp.Call(uid, "RemoteStartTransaction", ocpp.RemoteStartTransactionReq{
 			ConnectorID: connector, IDTag: h.m.Config().AutoStartIDTag(),
 		})
-		h.log.Info("schedule: window open — starting charge", "connector", connector, "uid", uid)
+		if sync {
+			h.log.Info("synchronised: proxied unit charging — starting charge", "connector", connector, "uid", uid)
+		} else {
+			h.log.Info("schedule: window open — starting charge", "connector", connector, "uid", uid)
+		}
 	case schedStop:
 		call, err = ocpp.Call(uid, "RemoteStopTransaction", ocpp.RemoteStopTransactionReq{TransactionID: st.TxnID})
-		h.log.Info("schedule: window closed — stopping charge", "txn", st.TxnID, "uid", uid)
+		if sync {
+			h.log.Info("synchronised: proxied unit stopped — stopping charge", "txn", st.TxnID, "uid", uid)
+		} else {
+			h.log.Info("schedule: window closed — stopping charge", "txn", st.TxnID, "uid", uid)
+		}
 	}
 	if err != nil || send(call) != nil {
 		return

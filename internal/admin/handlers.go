@@ -42,9 +42,12 @@ func (h *Handler) buildRows(cfg *config.Config, now time.Time) []cpRow {
 		row := makeRow(id, id == cfg.ProxiedID, st, now)
 		row.Name = cfg.DisplayName(id)
 		row.HasSchedule = cfg.HasSchedule(id)
+		row.CanSync = cfg.ProxiedID != "" && id != cfg.ProxiedID
 		switch {
 		case id == cfg.ProxiedID:
 			row.Mode = "proxied"
+		case cfg.IsSynchronised(id):
+			row.Mode = "synchronised"
 		case cfg.ScheduleActive(id):
 			row.Mode = "scheduled"
 		default:
@@ -89,7 +92,8 @@ func (h *Handler) setProxied(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// setMode handles the dashboard role selector: proxied / always-on / scheduled (FR-43).
+// setMode handles the dashboard role selector: proxied / always-on / scheduled /
+// synchronised (FR-43/FR-48).
 func (h *Handler) setMode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -98,24 +102,23 @@ func (h *Handler) setMode(w http.ResponseWriter, r *http.Request) {
 	id := r.FormValue("id")
 	cfg := h.m.ConfigSnapshot()
 	name := cfg.DisplayName(id)
-	var err error
-	var msg string
-	switch r.FormValue("mode") {
-	case "proxied":
-		err, msg = h.m.SetProxiedID(id), "Now remotely managing "+name+"."
-	case "always_on":
-		err, msg = h.m.SetLocalMode(id, false), name+" is now always-on (local)."
-	case "scheduled":
-		err, msg = h.m.SetLocalMode(id, true), name+" now follows its schedule."
-	default:
+	mode := r.FormValue("mode")
+	msgByMode := map[string]string{
+		"proxied":      "Now remotely managing " + name + ".",
+		"always_on":    name + " is now always-on (local).",
+		"scheduled":    name + " now follows its schedule.",
+		"synchronised": name + " now mirrors the proxied chargepoint.",
+	}
+	msg, ok := msgByMode[mode]
+	if !ok {
 		http.Error(w, "unknown mode", http.StatusBadRequest)
 		return
 	}
-	if err != nil {
+	if err := h.m.SetRole(id, mode); err != nil {
 		redirectMsg(w, r, "/admin", "error: "+err.Error())
 		return
 	}
-	h.log.Info("chargepoint mode changed", "cp", id, "mode", r.FormValue("mode"))
+	h.log.Info("chargepoint mode changed", "cp", id, "mode", mode)
 	redirectMsg(w, r, "/admin", msg)
 }
 

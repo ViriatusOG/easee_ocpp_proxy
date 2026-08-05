@@ -34,6 +34,44 @@ func newTestAPI(t *testing.T, token string) (*httptest.Server, *manager.Manager)
 	return ts, m
 }
 
+func TestAPISynchronisedMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := "listen_addr: \":9000\"\nheartbeat_interval_s: 300\nupstream_timeout_s: 30\n" +
+		"chargepoints: [CP1, CP2]\napi_token: \"secret\"\n"
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load(p)
+	m := manager.New(cfg)
+	ts := httptest.NewServer(New(m, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	t.Cleanup(ts.Close)
+
+	post := func(id, mode string) int {
+		req, _ := http.NewRequest("POST", ts.URL+"/api/chargepoints/"+id+"/mode", strings.NewReader(`{"mode":"`+mode+`"}`))
+		req.Header.Set("Authorization", "Bearer secret")
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.StatusCode
+	}
+
+	// synchronised is rejected while nothing is proxied.
+	if code := post("CP2", "synchronised"); code != http.StatusBadRequest {
+		t.Fatalf("synchronised with nothing proxied = %d, want 400", code)
+	}
+	// Proxy CP1, then CP2 can be synchronised.
+	if code := post("CP1", "proxied"); code != http.StatusOK {
+		t.Fatalf("proxied = %d, want 200", code)
+	}
+	if code := post("CP2", "synchronised"); code != http.StatusOK {
+		t.Fatalf("synchronised = %d, want 200", code)
+	}
+	if m.RoleName("CP2") != "synchronised" {
+		t.Fatalf("CP2 role = %q, want synchronised", m.RoleName("CP2"))
+	}
+}
+
 func TestAPIRequiresToken(t *testing.T) {
 	ts, _ := newTestAPI(t, "secret")
 

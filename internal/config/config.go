@@ -59,16 +59,18 @@ type LocalAutoStart struct {
 
 // Config is the full proxy configuration.
 type Config struct {
-	ListenAddr          string            `yaml:"listen_addr"`          // one port for ws:// OCPP and http:// /admin (D-2)
-	HeartbeatIntervalS  int               `yaml:"heartbeat_interval_s"` // advertised to local CPs; liveness = 2× (FR-24)
-	UpstreamTimeoutS    int               `yaml:"upstream_timeout_s"`   // initial upstream dial timeout (FR-17)
-	Chargepoints        []string          `yaml:"chargepoints"`         // allow-list of downstream Easee CP IDs (FR-3)
-	ProxiedID           string            `yaml:"proxied_id"`           // the single remotely-managed CP, or "" for none (FR-6/FR-7)
-	Aliases             map[string]string `yaml:"aliases"`              // CP ID → friendly name, e.g. "Garage Left" (FR-42)
-	Timezone            string            `yaml:"timezone"`             // IANA zone for schedules; "" = server local, DST-aware (FR-41)
-	Schedules           []Schedule        `yaml:"schedules"`            // central schedule definitions (FR-41)
-	DeviceSchedules     map[string]string `yaml:"device_schedules"`     // CP ID → schedule name (FR-41)
-	SchedulePaused      map[string]bool   `yaml:"schedule_paused"`      // CP IDs whose assigned schedule is paused (always-on) (FR-43)
+	ListenAddr          string            `yaml:"listen_addr"`            // one port for ws:// OCPP and http:// /admin (D-2)
+	HeartbeatIntervalS  int               `yaml:"heartbeat_interval_s"`   // advertised to local CPs; liveness = 2× (FR-24)
+	UpstreamTimeoutS    int               `yaml:"upstream_timeout_s"`     // initial upstream dial timeout (FR-17)
+	Chargepoints        []string          `yaml:"chargepoints"`           // allow-list of downstream Easee CP IDs (FR-3)
+	ProxiedID           string            `yaml:"proxied_id"`             // the single remotely-managed CP, or "" for none (FR-6/FR-7)
+	Aliases             map[string]string `yaml:"aliases"`                // CP ID → friendly name, e.g. "Garage Left" (FR-42)
+	Timezone            string            `yaml:"timezone"`               // IANA zone for schedules; "" = server local, DST-aware (FR-41)
+	Schedules           []Schedule        `yaml:"schedules"`              // central schedule definitions (FR-41)
+	DeviceSchedules     map[string]string `yaml:"device_schedules"`       // CP ID → schedule name (FR-41)
+	SchedulePaused      map[string]bool   `yaml:"schedule_paused"`        // CP IDs whose assigned schedule is paused (always-on) (FR-43)
+	Synchronised        []string          `yaml:"synchronised,omitempty"` // local CPs that mirror the proxied CP's start/stop (FR-48)
+	SavedRoles          map[string]string `yaml:"saved_roles,omitempty"`  // CP ID → role to restore when displaced from proxied / demoted from synchronised (FR-48)
 	Remote              Remote            `yaml:"remote"`
 	BootAnonymise       BootAnonymise     `yaml:"boot_anonymise"`
 	ProxyForceBoot      bool              `yaml:"proxy_force_boot"`      // trigger a BootNotification on every upstream connect (FR-44); once the CSMS has provisioned the CP this is redundant and can be disabled
@@ -118,6 +120,16 @@ func (c *Config) Location() *time.Location {
 		return loc
 	}
 	return time.Local
+}
+
+// IsSynchronised reports whether the CP mirrors the proxied CP's start/stop (FR-48).
+func (c *Config) IsSynchronised(id string) bool {
+	for _, x := range c.Synchronised {
+		if x == id {
+			return true
+		}
+	}
+	return false
 }
 
 // HasSchedule reports whether a schedule is assigned to the CP.

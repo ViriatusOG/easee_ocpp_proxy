@@ -262,6 +262,24 @@ OCPP 1.6 CALLs. At minimum:
   assignment (a paused schedule is kept, not deleted) and take effect at runtime without
   reconnecting the CP; switching to/from proxied reconnects it (D-9). Assigning a schedule
   SHALL default the CP to scheduled (enforced).
+- **FR-48** A chargepoint MAY be set to a fourth mode, **synchronised**: a local CP whose
+  charge start/stop **mirrors the proxied CP's actual transactions**, so a second vehicle
+  charges within the same windows the CSMS grants the proxied unit. Rules:
+  - **Availability:** synchronised SHALL be selectable only while some *other* CP is
+    proxied.
+  - **Trigger:** while synchronised, the CP ignores its own schedule and the local
+    auto-start toggle; it starts (`RemoteStartTransaction`, local) when the proxied CP has
+    an active transaction and the synchronised car is plugged in and waiting, and stops
+    (`RemoteStopTransaction`, local) when the proxied CP's transaction ends or its session
+    drops. Joining mid-window starts immediately (next reconcile tick).
+  - **Role memory:** when a CP enters proxied or synchronised, its prior role is saved. A
+    CP displaced from proxied (because another became proxied) SHALL resume its saved role
+    (which may itself be synchronised). If the proxied role is cleared with nothing else
+    proxied, every synchronised CP SHALL fall back to its saved base role.
+  - **Metering isolation:** a synchronised CP's energy SHALL NOT contribute to the meter
+    reported to the CSMS — session or lifetime (FR-47). Only the proxied CP's energy is
+    reported. (Guaranteed structurally: synchronised CPs are local, so their frames never
+    reach the upstream link and the virtual meter only advances from proxied-path frames.)
 
 ### 5.4 Upstream proxying (proxied CP)
 

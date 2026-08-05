@@ -74,6 +74,9 @@ func Serve(ctx context.Context, c *websocket.Conn, id string, role manager.Role,
 	defer m.State().Update(id, func(cp *state.CP) {
 		cp.DownstreamUp = false
 		cp.UpstreamUp = false
+		// A dropped session has no active transaction; clearing this stops any
+		// synchronised CPs from mirroring a stale "charging" state (FR-48).
+		cp.TxnActive = false
 	})
 	defer c.CloseNow()
 

@@ -58,8 +58,8 @@ func (h *Handler) requireToken(next http.HandlerFunc) http.HandlerFunc {
 type chargepoint struct {
 	ID              string   `json:"id"`
 	Name            string   `json:"name"`
-	Role            string   `json:"role"`  // effective: proxied | scheduled | always_on
-	Modes           []string `json:"modes"` // selectable modes (scheduled only if a schedule is assigned)
+	Role            string   `json:"role"`  // effective: proxied | scheduled | always_on | synchronised
+	Modes           []string `json:"modes"` // selectable modes (scheduled only if a schedule is assigned; synchronised only if another CP is proxied)
 	Online          bool     `json:"online"`
 	Upstream        bool     `json:"upstream"` // meaningful when proxied
 	ConnectorStatus string   `json:"connector_status"`
@@ -95,19 +95,13 @@ func (h *Handler) setMode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	var err error
 	switch body.Mode {
-	case "proxied":
-		err = h.m.SetProxiedID(id)
-	case "always_on":
-		err = h.m.SetLocalMode(id, false)
-	case "scheduled":
-		err = h.m.SetLocalMode(id, true)
+	case "proxied", "always_on", "scheduled", "synchronised":
 	default:
-		writeError(w, http.StatusBadRequest, "mode must be one of proxied, always_on, scheduled")
+		writeError(w, http.StatusBadRequest, "mode must be one of proxied, always_on, scheduled, synchronised")
 		return
 	}
-	if err != nil {
+	if err := h.m.SetRole(id, body.Mode); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -133,14 +127,20 @@ func (h *Handler) build(cfg *config.Config, id string) chargepoint {
 	switch {
 	case id == cfg.ProxiedID:
 		c.Role = "proxied"
+	case cfg.IsSynchronised(id):
+		c.Role = "synchronised"
 	case cfg.ScheduleActive(id):
 		c.Role = "scheduled"
 	default:
 		c.Role = "always_on"
 	}
+	// Synchronised is selectable only while another CP is proxied (FR-48).
+	if cfg.ProxiedID != "" && id != cfg.ProxiedID {
+		c.Modes = append(c.Modes, "synchronised")
+	}
 	if cfg.HasSchedule(id) {
 		c.Modes = append(c.Modes, "scheduled")
-		if c.Role != "proxied" {
+		if c.Role != "proxied" && c.Role != "synchronised" {
 			c.Schedule = cfg.DeviceSchedules[id]
 			switch {
 			case c.Role == "always_on":

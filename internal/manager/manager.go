@@ -83,6 +83,8 @@ func (m *Manager) snapshotLocked() config.Config {
 	c.Aliases = copyMap(m.cfg.Aliases)
 	c.DeviceSchedules = copyMap(m.cfg.DeviceSchedules)
 	c.SchedulePaused = copyBoolMap(m.cfg.SchedulePaused)
+	c.Synchronised = append([]string(nil), m.cfg.Synchronised...)
+	c.SavedRoles = copyMap(m.cfg.SavedRoles)
 	return c
 }
 

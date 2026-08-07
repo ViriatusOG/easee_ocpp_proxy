@@ -259,9 +259,12 @@ func (h *localCSMS) reconcileSchedule(send func([]byte) error) {
 		}
 	case schedStop:
 		call, err = ocpp.Call(uid, "RemoteStopTransaction", ocpp.RemoteStopTransactionReq{TransactionID: st.TxnID})
-		if sync {
+		switch {
+		case sync:
 			h.log.Info("synchronised: proxied unit stopped — stopping charge", "txn", st.TxnID, "uid", uid)
-		} else {
+		case h.m.IsChargingOff(h.id):
+			h.log.Info("charging disabled (always off) — stopping charge", "txn", st.TxnID, "uid", uid)
+		default:
 			h.log.Info("schedule: window closed — stopping charge", "txn", st.TxnID, "uid", uid)
 		}
 	}

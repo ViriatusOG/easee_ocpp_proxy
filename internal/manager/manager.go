@@ -84,6 +84,7 @@ func (m *Manager) snapshotLocked() config.Config {
 	c.DeviceSchedules = copyMap(m.cfg.DeviceSchedules)
 	c.SchedulePaused = copyBoolMap(m.cfg.SchedulePaused)
 	c.Synchronised = append([]string(nil), m.cfg.Synchronised...)
+	c.ChargingOff = append([]string(nil), m.cfg.ChargingOff...)
 	c.SavedRoles = copyMap(m.cfg.SavedRoles)
 	return c
 }
@@ -116,6 +117,10 @@ func copyBoolMap(in map[string]bool) map[string]bool {
 func (m *Manager) AllowedAt(cpID string, t time.Time) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	// "Always off": charging disabled entirely, pending external control (FR-49).
+	if m.cfg.IsChargingOff(cpID) {
+		return false
+	}
 	// Paused schedule = always-on: charging allowed at any time (FR-43).
 	if m.cfg.SchedulePaused[cpID] {
 		return true

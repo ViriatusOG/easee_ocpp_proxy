@@ -93,3 +93,11 @@ func TestNoAutoStartOnConnectorZero(t *testing.T) {
 		t.Fatal("connector 0 (whole station) should not auto-start")
 	}
 }
+
+// "Always off" disables local charging: a Preparing connector must not auto-start (FR-49).
+func TestNoAutoStartWhenChargingOff(t *testing.T) {
+	h, _ := newLocalCfg(t, func(c *config.Config) { c.ChargingOff = []string{"CP1"} })
+	if findRemoteStart(handleFrames(t, h, "1", "StatusNotification", ocpp.StatusNotificationReq{ConnectorID: 1, Status: "Preparing"})) != nil {
+		t.Fatal("always-off CP must not auto-start on Preparing")
+	}
+}

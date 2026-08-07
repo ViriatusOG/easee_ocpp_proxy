@@ -35,6 +35,12 @@ schedule_paused:        # CP IDs whose assigned schedule is paused = "always on"
 # synchronised CP's energy is never reported upstream. Managed from the dashboard role
 # selector — these two keys are written automatically, shown here for reference.
 synchronised: []        # e.g. [M4XTR7Q2]
+
+# Local CPs with charging disabled ("always off", FR-49): they never auto-start and any
+# active charge is stopped. Intended for external control — an integration (e.g. Home
+# Assistant) pauses a CP here, then charges on its own events by switching the role back to
+# always-on via the API. Managed from the dashboard/API role selector.
+charging_off: []        # e.g. [M4XTR7Q2]
 saved_roles: {}         # CP ID → role to auto-restore when displaced from proxied / demoted
 
 # Upstream CSMS — used only when a CP is proxied (D-3/D-7/D-8).

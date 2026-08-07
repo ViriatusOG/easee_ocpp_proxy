@@ -70,6 +70,7 @@ type Config struct {
 	DeviceSchedules     map[string]string `yaml:"device_schedules"`       // CP ID → schedule name (FR-41)
 	SchedulePaused      map[string]bool   `yaml:"schedule_paused"`        // CP IDs whose assigned schedule is paused (always-on) (FR-43)
 	Synchronised        []string          `yaml:"synchronised,omitempty"` // local CPs that mirror the proxied CP's start/stop (FR-48)
+	ChargingOff         []string          `yaml:"charging_off,omitempty"` // local CPs where charging is disabled ("always off"); external control via HA (FR-49)
 	SavedRoles          map[string]string `yaml:"saved_roles,omitempty"`  // CP ID → role to restore when displaced from proxied / demoted from synchronised (FR-48)
 	Remote              Remote            `yaml:"remote"`
 	BootAnonymise       BootAnonymise     `yaml:"boot_anonymise"`
@@ -125,6 +126,16 @@ func (c *Config) Location() *time.Location {
 // IsSynchronised reports whether the CP mirrors the proxied CP's start/stop (FR-48).
 func (c *Config) IsSynchronised(id string) bool {
 	for _, x := range c.Synchronised {
+		if x == id {
+			return true
+		}
+	}
+	return false
+}
+
+// IsChargingOff reports whether charging is disabled for the CP ("always off", FR-49).
+func (c *Config) IsChargingOff(id string) bool {
+	for _, x := range c.ChargingOff {
 		if x == id {
 			return true
 		}

@@ -48,12 +48,14 @@ func (h *Handler) buildRows(cfg *config.Config, now time.Time) []cpRow {
 			row.Mode = "proxied"
 		case cfg.IsSynchronised(id):
 			row.Mode = "synchronised"
+		case cfg.IsChargingOff(id):
+			row.Mode = "always_off"
 		case cfg.ScheduleActive(id):
 			row.Mode = "scheduled"
 		default:
 			row.Mode = "always_on"
 		}
-		if row.Mode != "proxied" && row.HasSchedule {
+		if row.Mode != "proxied" && row.Mode != "always_off" && row.HasSchedule {
 			row.Schedule = cfg.DeviceSchedules[id]
 			switch {
 			case row.Mode == "always_on":
@@ -106,6 +108,7 @@ func (h *Handler) setMode(w http.ResponseWriter, r *http.Request) {
 	msgByMode := map[string]string{
 		"proxied":      "Now remotely managing " + name + ".",
 		"always_on":    name + " is now always-on (local).",
+		"always_off":   name + " charging is now disabled (always off).",
 		"scheduled":    name + " now follows its schedule.",
 		"synchronised": name + " now mirrors the proxied chargepoint.",
 	}

@@ -280,6 +280,14 @@ OCPP 1.6 CALLs. At minimum:
     reported to the CSMS — session or lifetime (FR-47). Only the proxied CP's energy is
     reported. (Guaranteed structurally: synchronised CPs are local, so their frames never
     reach the upstream link and the virtual meter only advances from proxied-path frames.)
+- **FR-49** A chargepoint MAY be set to **always off**: a local role in which charging is
+  disabled (`AllowedAt` returns false unconditionally), so the CP never auto-starts and any
+  active local charge is stopped at the next reconcile. It is the complement of always-on
+  and is selectable for any local CP. Its purpose is **external control**: an integration
+  (e.g. Home Assistant) pauses a CP by setting *always off*, then starts charging on its own
+  events (solar surplus, price, presence, …) by flipping it back to *always on* — via the
+  role control the dashboard and JSON API already expose. It participates in the saved-role
+  memory (FR-48) like any other local role.
 
 ### 5.4 Upstream proxying (proxied CP)
 

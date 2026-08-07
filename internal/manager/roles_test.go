@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ipeel/easee-ocpp-proxy/internal/config"
 	"github.com/ipeel/easee-ocpp-proxy/internal/state"
@@ -108,6 +109,41 @@ func TestSynchronisedDemotedWhenNothingProxied(t *testing.T) {
 	}
 	if got := m.RoleName("CP2"); got != "always_on" {
 		t.Fatalf("CP2 fell back to %q, want always_on (its saved role)", got)
+	}
+}
+
+// "Always off" disables charging entirely (AllowedNow false) and round-trips with the
+// other local roles (FR-49).
+func TestAlwaysOffRole(t *testing.T) {
+	m := newManagerMulti(t)
+	// CP2 has no schedule → always_on by default, so charging is allowed.
+	if !m.AllowedNow("CP2") {
+		t.Fatal("default (always-on) CP should be allowed to charge")
+	}
+	if err := m.SetRole("CP2", "always_off"); err != nil {
+		t.Fatal(err)
+	}
+	if m.RoleName("CP2") != "always_off" || !m.IsChargingOff("CP2") {
+		t.Fatalf("CP2 role = %q, want always_off", m.RoleName("CP2"))
+	}
+	if m.AllowedNow("CP2") {
+		t.Fatal("always_off CP must not be allowed to charge")
+	}
+	// Flip back to always_on (what an HA automation would do to start charging).
+	if err := m.SetRole("CP2", "always_on"); err != nil {
+		t.Fatal(err)
+	}
+	if m.IsChargingOff("CP2") || !m.AllowedNow("CP2") {
+		t.Fatal("always_on CP should be allowed again and cleared from charging-off")
+	}
+
+	// A scheduled CP forced off ignores its window (always_off wins).
+	if err := m.SetRole("CP1", "always_off"); err != nil { // CP1 has a schedule
+		t.Fatal(err)
+	}
+	inside := time.Date(2026, 8, 2, 2, 0, 0, 0, time.UTC) // within CP1's 23:30–05:30 window
+	if m.AllowedAt("CP1", inside) {
+		t.Fatal("always_off must override an open schedule window")
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 const (
 	RoleProxiedName      = "proxied"
 	RoleAlwaysOnName     = "always_on"
+	RoleAlwaysOffName    = "always_off"
 	RoleScheduledName    = "scheduled"
 	RoleSynchronisedName = "synchronised"
 )
@@ -33,6 +34,13 @@ func (m *Manager) IsSynchronised(id string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.cfg.IsSynchronised(id)
+}
+
+// IsChargingOff reports whether the CP has charging disabled ("always off", FR-49).
+func (m *Manager) IsChargingOff(id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg.IsChargingOff(id)
 }
 
 // AnyProxied reports whether some chargepoint is currently proxied (gates the
@@ -81,7 +89,7 @@ func (m *Manager) SetRole(id, target string) error {
 		m.saveRoleLocked(id, m.currentRoleLocked(id))
 		m.applyLocalRoleLocked(id, RoleSynchronisedName)
 
-	case RoleAlwaysOnName, RoleScheduledName:
+	case RoleAlwaysOnName, RoleScheduledName, RoleAlwaysOffName:
 		if m.cfg.ProxiedID == id {
 			m.cfg.ProxiedID = ""
 			toDrop = append(toDrop, id)
@@ -115,6 +123,8 @@ func (m *Manager) currentRoleLocked(id string) string {
 		return RoleProxiedName
 	case m.cfg.IsSynchronised(id):
 		return RoleSynchronisedName
+	case m.cfg.IsChargingOff(id):
+		return RoleAlwaysOffName
 	case m.cfg.DeviceSchedules[id] != "" && !m.cfg.SchedulePaused[id]:
 		return RoleScheduledName
 	default:
@@ -132,6 +142,7 @@ func (m *Manager) RoleName(id string) string {
 // applyLocalRoleLocked sets the config for a non-proxied role. Caller holds m.mu.
 func (m *Manager) applyLocalRoleLocked(id, role string) {
 	m.setSynchronisedLocked(id, role == RoleSynchronisedName)
+	m.setChargingOffLocked(id, role == RoleAlwaysOffName)
 	switch role {
 	case RoleScheduledName:
 		delete(m.cfg.SchedulePaused, id) // enforce the assigned schedule
@@ -140,9 +151,8 @@ func (m *Manager) applyLocalRoleLocked(id, role string) {
 			m.cfg.SchedulePaused = map[string]bool{}
 		}
 		m.cfg.SchedulePaused[id] = true
-	case RoleSynchronisedName:
-		// schedule state is irrelevant while synchronised; the reconciler mirrors the
-		// proxied unit regardless. Leave the paused flag untouched.
+	case RoleSynchronisedName, RoleAlwaysOffName:
+		// schedule state is irrelevant in these roles; leave the paused flag untouched.
 	}
 }
 
@@ -159,6 +169,21 @@ func (m *Manager) setSynchronisedLocked(id string, on bool) {
 		next = append(next, id)
 	}
 	m.cfg.Synchronised = next
+}
+
+// setChargingOffLocked adds/removes id from the charging-off set (FR-49, copy-on-write).
+// Caller holds m.mu.
+func (m *Manager) setChargingOffLocked(id string, on bool) {
+	next := make([]string, 0, len(m.cfg.ChargingOff)+1)
+	for _, x := range m.cfg.ChargingOff {
+		if x != id {
+			next = append(next, x)
+		}
+	}
+	if on {
+		next = append(next, id)
+	}
+	m.cfg.ChargingOff = next
 }
 
 func (m *Manager) saveRoleLocked(id, role string) {

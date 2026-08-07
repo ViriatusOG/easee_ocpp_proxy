@@ -11,6 +11,7 @@ DEFAULT_SCAN_INTERVAL = 15  # seconds
 MODE_LABELS = {
     "proxied": "Proxied",
     "always_on": "Always on",
+    "always_off": "Always off",
     "scheduled": "Scheduled",
     "synchronised": "Synchronised",
 }

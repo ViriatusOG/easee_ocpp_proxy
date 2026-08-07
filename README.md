@@ -51,7 +51,9 @@ conveniences below simply become no-ops for chargers that don't need them).
   ID mapping, BootNotification anonymisation, and forced re-provisioning on reconnect.
 - **DST-aware charging schedules** — named windows (`HH:MM`, may cross midnight), defined
   centrally and assigned per chargepoint, evaluated in a configurable/local timezone.
-  Per-chargepoint **always-on ⇄ scheduled** toggle that keeps the schedule assigned.
+  Per-chargepoint **always-on ⇄ scheduled** toggle that keeps the schedule assigned, plus
+  an **always-off** role that disables charging for external control (start it from your own
+  automations — solar surplus, price, presence — via the API/Home Assistant).
 - **Synchronised charging** — a second charger can *mirror* the proxied charger's
   start/stop, so two vehicles share the remote server's smart-charging windows through one
   remote identity. Its energy is never reported upstream; only the proxied charger's is.

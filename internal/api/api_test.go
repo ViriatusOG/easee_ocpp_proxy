@@ -125,9 +125,9 @@ func TestAPIListAndSetMode(t *testing.T) {
 	if list[0].Role != "always_on" {
 		t.Errorf("role = %q, want always_on", list[0].Role)
 	}
-	// No schedule assigned → only two modes offered.
-	if strings.Join(list[0].Modes, ",") != "proxied,always_on" {
-		t.Errorf("modes = %v, want [proxied always_on]", list[0].Modes)
+	// No schedule assigned, nothing proxied → base local modes offered.
+	if strings.Join(list[0].Modes, ",") != "proxied,always_on,always_off" {
+		t.Errorf("modes = %v, want [proxied always_on always_off]", list[0].Modes)
 	}
 
 	// Set to proxied via the API.

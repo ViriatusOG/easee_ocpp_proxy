@@ -235,7 +235,11 @@ func (h *localCSMS) reconcileSchedule(send func([]byte) error) {
 		return
 	}
 	now := time.Now()
-	if !st.LastScheduleAction.IsZero() && now.Sub(st.LastScheduleAction) < scheduleCooldown {
+	// The cooldown only guards starts (avoiding start/stop thrash while the charger
+	// transitions Preparing→Charging). A stop must never be gated by it — re-issuing a
+	// stop is harmless/idempotent, and delaying one (e.g. an always-off switch landing
+	// just after a start) would leave the charger running. FR-49/FR-43.
+	if action == schedStart && !st.LastScheduleAction.IsZero() && now.Sub(st.LastScheduleAction) < scheduleCooldown {
 		return
 	}
 

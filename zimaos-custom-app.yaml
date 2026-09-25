@@ -1,0 +1,24 @@
+# ZimaOS — Install Custom App (paste into the YAML tab, then Install)
+#
+# Pulls the multi-arch easee-ocpp-proxy image from Docker Hub and runs it on
+# port 9000. First boot seeds /config/config.yaml from the bundled example,
+# then open http://<nas-ip>:9000/admin to set the admin password and add
+# your chargepoints.
+services:
+  app:
+    image: viriatusog/easee-ocpp-proxy:latest
+    network_mode: bridge
+    restart: unless-stopped
+    ports:
+      - target: 9000
+        published: "9000"
+        protocol: tcp
+    volumes:
+      - appdata:/config
+x-casaos:
+  title: Easee OCPP Proxy
+  custom: app
+  main: app
+  scheme: http
+  hostname: ""
+  index: /admin

@@ -14,7 +14,11 @@ services:
         published: "9000"
         protocol: tcp
     volumes:
-      - appdata:/config
+      - type: bind
+        source: /DATA/AppData/easee-ocpp-proxy/config
+        target: /config
+        bind:
+          create_host_path: true
 x-casaos:
   title: Easee OCPP Proxy
   custom: app

@@ -70,6 +70,15 @@ const baseTmpl = `{{define "base"}}<!doctype html>
   .muted { color: #64748b; font-size: .85rem; }
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   select, input[type=text], input[type=password], input[type=url] { font-size: 16px; } /* avoid iOS zoom-on-focus */
+  .confirm-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(15,23,42,.55); }
+  .confirm-overlay[hidden] { display: none; }
+  .confirm-dialog { background: #fff; border-radius: .6rem; box-shadow: 0 12px 40px rgba(0,0,0,.25); width: 100%; max-width: 26rem; padding: 1.1rem 1.2rem; }
+  .confirm-dialog h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
+  .confirm-dialog p { margin: 0 0 1rem; color: #334155; font-size: .95rem; }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+  button.secondary { background: #e2e8f0; color: #1a1a1a; }
+  button.secondary:hover { background: #cbd5e1; }
+  button.danger:hover { background: #b91c1c; }
   @media (max-width: 720px) {
     main { padding: 0 .6rem; margin: 1rem auto; }
     header { gap: .55rem; padding: .6rem .7rem; }
@@ -106,6 +115,52 @@ const baseTmpl = `{{define "base"}}<!doctype html>
 {{end}}
 {{if .Flash}}<div class="flash{{if hasPrefixError .Flash}} error{{end}}">{{.Flash}}</div>{{end}}
 <main>{{block "content" .}}{{end}}</main>
+<div id="confirm-overlay" class="confirm-overlay" hidden>
+  <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h2 id="confirm-title">Are you sure?</h2>
+    <p id="confirm-message"></p>
+    <div class="confirm-actions">
+      <button type="button" id="confirm-cancel" class="secondary">Cancel</button>
+      <button type="button" id="confirm-ok" class="danger">Confirm</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var overlay = document.getElementById('confirm-overlay');
+  var msg = document.getElementById('confirm-message');
+  var ok = document.getElementById('confirm-ok');
+  var pending = null;
+
+  function show(text, label) {
+    msg.textContent = text;
+    ok.textContent = label;
+    overlay.hidden = false;
+    ok.focus();
+  }
+  function hide() {
+    overlay.hidden = true;
+    pending = null;
+  }
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (!f.hasAttribute('data-confirm')) return;
+    e.preventDefault();
+    pending = f;
+    show(f.getAttribute('data-confirm'), f.getAttribute('data-confirm-label') || 'Confirm');
+  }, true);
+  ok.addEventListener('click', function () {
+    var f = pending;
+    hide();
+    if (f) f.submit();
+  });
+  document.getElementById('confirm-cancel').addEventListener('click', hide);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) hide(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !overlay.hidden) hide();
+  });
+})();
+</script>
 </body>
 </html>{{end}}`
 
@@ -229,7 +284,7 @@ const chargepointsContent = `{{define "content"}}
           </form>
         </td>
         <td>
-          <form method="post" action="/admin/chargepoints" onsubmit="return confirm('Remove {{$e.ID}}?')">
+          <form method="post" action="/admin/chargepoints" data-confirm="Remove {{ $e.ID }}?" data-confirm-label="Remove">
             <input type="hidden" name="action" value="remove">
             <input type="hidden" name="id" value="{{$e.ID}}">
             <button class="danger" type="submit">Remove</button>
@@ -262,7 +317,7 @@ const schedulesContent = `{{define "content"}}
       <tr>
         <td>{{.Name}}</td><td>{{.Start}}</td><td>{{.Stop}}</td>
         <td>
-          <form method="post" action="/admin/schedules" onsubmit="return confirm('Remove {{.Name}}?')">
+          <form method="post" action="/admin/schedules" data-confirm="Remove schedule {{ .Name }}?" data-confirm-label="Remove">
             <input type="hidden" name="action" value="remove">
             <input type="hidden" name="name" value="{{.Name}}">
             <button class="danger" type="submit">Remove</button>
@@ -362,7 +417,7 @@ const accountContent = `{{define "content"}}
       <input type="hidden" name="action" value="gentoken">
       <button type="submit">Regenerate</button>
     </form>
-    <form method="post" action="/admin/account" style="display:inline-block" onsubmit="return confirm('Clear the API token? This disables the API and breaks any integration using it.')">
+    <form method="post" action="/admin/account" style="display:inline-block" data-confirm="Clear the API token? This disables the API and breaks any integration using it." data-confirm-label="Clear">
       <input type="hidden" name="action" value="cleartoken">
       <button type="submit" class="danger">Clear</button>
     </form>

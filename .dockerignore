@@ -1,0 +1,7 @@
+.git
+homeassistant
+docs
+deploy
+dist
+*.md
+!README.md
